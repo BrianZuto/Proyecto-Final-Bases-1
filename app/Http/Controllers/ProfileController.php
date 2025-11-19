@@ -40,35 +40,47 @@ class ProfileController extends Controller
     {
         /** @var User $user */
         $user = Auth::user();
+        
+        // Cargar la relación rol si no está cargada
+        if ($user && !$user->relationLoaded('rol')) {
+            $user->load('rol');
+        }
 
-        // Datos quemados - luego vendrán de la BD
+        // Obtener o crear deportista
+        $deportista = DB::select("SELECT * FROM deportistas WHERE user_id = ? LIMIT 1", [$user->id]);
+        
+        if (empty($deportista)) {
+            DB::insert("INSERT INTO deportistas (user_id, created_at, updated_at) VALUES (?, ?, ?)", [
+                $user->id,
+                now(),
+                now()
+            ]);
+            $deportistaId = DB::getPdo()->lastInsertId();
+            $deportista = (object) ['id' => $deportistaId];
+        } else {
+            $deportista = $deportista[0];
+        }
+
+        // Datos reales de la BD
         $stats = [
-            'sesiones_totales' => 127,
-            'sesiones_mes' => 12,
-            'racha_actual' => 15,
-            'logros' => 24,
-            'logros_percentil' => 5,
+            'sesiones_totales' => DB::selectOne("SELECT COUNT(*) as total FROM sesiones WHERE user_id = ? AND estado = 'completada'", [$user->id])->total ?? 0,
+            'sesiones_mes' => DB::selectOne("SELECT COUNT(*) as total FROM sesiones WHERE user_id = ? AND estado = 'completada' AND YEAR(fecha_sesion) = ? AND MONTH(fecha_sesion) = ?", [$user->id, now()->year, now()->month])->total ?? 0,
+            'racha_actual' => $this->calcularRacha($user->id),
+            'logros' => DB::selectOne("SELECT COUNT(*) as total FROM gamificaciones WHERE deportista_id = ?", [$deportista->id])->total ?? 0,
+            'logros_percentil' => $this->calcularPercentilLogros($deportista->id),
         ];
 
+        // Objetivos basados en datos reales
+        $sesionesMes = $stats['sesiones_mes'];
         $objetivos = [
             [
                 'titulo' => '16 sesiones de entrenamiento',
-                'actual' => 12,
+                'actual' => $sesionesMes,
                 'meta' => 16,
                 'tipo' => 'sesiones'
             ],
-            [
-                'titulo' => '100kg en sentadilla',
-                'actual' => 85,
-                'meta' => 100,
-                'tipo' => 'kg'
-            ],
-            [
-                'titulo' => 'Perder 5kg',
-                'actual' => 3,
-                'meta' => 5,
-                'tipo' => 'kg'
-            ],
+            // Los otros objetivos pueden ser personalizados por el usuario en el futuro
+            // Por ahora mantenemos algunos objetivos de ejemplo
         ];
 
         // Extraer iniciales del nombre
@@ -103,6 +115,11 @@ class ProfileController extends Controller
     {
         /** @var User $user */
         $user = Auth::user();
+        
+        // Cargar la relación rol si no está cargada
+        if ($user && !$user->relationLoaded('rol')) {
+            $user->load('rol');
+        }
         $isProfileComplete = $this->isProfileComplete($user);
 
         return view('profile.edit', compact('user', 'isProfileComplete'));
@@ -159,7 +176,32 @@ class ProfileController extends Controller
         $data['name'] = $nombreCompleto;
 
         // Actualizar campos del usuario
-        DB::table('users')->where('id', $user->id)->update($data);
+        DB::update("
+            UPDATE users SET 
+                primer_nombre = ?, 
+                segundo_nombre = ?, 
+                primer_apellido = ?, 
+                segundo_apellido = ?, 
+                nombre_usuario = ?, 
+                email = ?, 
+                telefonos = ?, 
+                direccion = ?, 
+                name = ?,
+                updated_at = ?
+            WHERE id = ?
+        ", [
+            $data['primer_nombre'],
+            $data['segundo_nombre'],
+            $data['primer_apellido'],
+            $data['segundo_apellido'],
+            $data['nombre_usuario'],
+            $data['email'],
+            $data['telefonos'],
+            $data['direccion'],
+            $data['name'],
+            now(),
+            $user->id
+        ]);
 
         // Recargar el modelo desde la base de datos
         $user = User::find($user->id);
@@ -180,5 +222,66 @@ class ProfileController extends Controller
             'is_complete' => $isComplete,
             'message' => $isComplete ? null : 'Debes completar tu perfil para continuar.'
         ]);
+    }
+
+    /**
+     * Calcula la racha actual de días consecutivos
+     */
+    private function calcularRacha($userId)
+    {
+        $sesiones = DB::select("
+            SELECT DISTINCT fecha_sesion 
+            FROM sesiones 
+            WHERE user_id = ? 
+            AND estado = 'completada' 
+            ORDER BY fecha_sesion DESC
+        ", [$userId]);
+        
+        $sesiones = collect($sesiones)->pluck('fecha_sesion')->toArray();
+
+        if (empty($sesiones)) {
+            return 0;
+        }
+
+        $racha = 0;
+        $fechaActual = now()->toDateString();
+        $fechaEsperada = $fechaActual;
+
+        foreach ($sesiones as $fecha) {
+            if ($fecha == $fechaEsperada || $fecha == date('Y-m-d', strtotime($fechaEsperada . ' -1 day'))) {
+                $racha++;
+                $fechaEsperada = date('Y-m-d', strtotime($fecha . ' -1 day'));
+            } else {
+                break;
+            }
+        }
+
+        return $racha;
+    }
+
+    /**
+     * Calcula el percentil de logros del usuario
+     */
+    private function calcularPercentilLogros($deportistaId)
+    {
+        $logrosUsuario = DB::selectOne("SELECT COUNT(*) as total FROM gamificaciones WHERE deportista_id = ?", [$deportistaId])->total ?? 0;
+
+        $totalDeportistas = DB::selectOne("SELECT COUNT(*) as total FROM deportistas")->total ?? 0;
+        
+        if ($totalDeportistas == 0) {
+            return 100;
+        }
+
+        $deportistasConMenosLogros = DB::selectOne("
+            SELECT COUNT(*) as total 
+            FROM (
+                SELECT deportista_id, COUNT(*) as total_logros
+                FROM gamificaciones
+                GROUP BY deportista_id
+                HAVING total_logros < ?
+            ) as subquery
+        ", [$logrosUsuario])->total ?? 0;
+
+        return round(($deportistasConMenosLogros / $totalDeportistas) * 100);
     }
 }

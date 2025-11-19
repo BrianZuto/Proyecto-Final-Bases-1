@@ -29,23 +29,95 @@ class User extends Authenticatable
         'nombre_usuario',
         'telefonos',
         'direccion',
-        'rol',
+        'rol_id',
     ];
+    
+    /**
+     * Relación con el rol
+     */
+    public function rol()
+    {
+        return $this->belongsTo(Rol::class, 'rol_id');
+    }
+
+    /**
+     * Relación con deportista (si existe)
+     */
+    public function deportista()
+    {
+        return $this->hasOne(Deportista::class, 'user_id');
+    }
+
+    /**
+     * Relación con entrenador (si existe)
+     */
+    public function entrenador()
+    {
+        return $this->hasOne(Entrenador::class, 'user_id');
+    }
+
+    /**
+     * Relación con administrador (si existe)
+     */
+    public function administrador()
+    {
+        return $this->hasOne(Administrador::class, 'user_id');
+    }
+    
+    /**
+     * Obtiene el rol del usuario como objeto, cargándolo si es necesario
+     */
+    private function getRolObject()
+    {
+        // Si la relación no está cargada, cargarla
+        if (!$this->relationLoaded('rol')) {
+            $this->load('rol');
+        }
+        
+        // Obtener la relación cargada
+        $rol = $this->getRelation('rol');
+        
+        // Si no hay relación cargada pero tenemos rol_id, cargarla directamente
+        if (!$rol && $this->rol_id) {
+            $rol = $this->rol()->first();
+            if ($rol) {
+                $this->setRelation('rol', $rol);
+            }
+        }
+        
+        return $rol;
+    }
     
     /**
      * Verifica si el usuario es Administrador
      */
     public function isAdministrador()
     {
-        return $this->rol === 'Administrador';
+        $rol = $this->getRolObject();
+        if (!$rol) {
+            return false;
+        }
+        return $rol->nombre === 'Administrador';
     }
     
     /**
-     * Verifica si el usuario es Coach
+     * Verifica si el usuario es Entrenador
+     */
+    public function isEntrenador()
+    {
+        $rol = $this->getRolObject();
+        if (!$rol) {
+            return false;
+        }
+        return $rol->nombre === 'Entrenador';
+    }
+    
+    /**
+     * Verifica si el usuario es Coach (alias para Entrenador)
      */
     public function isCoach()
     {
-        return $this->rol === 'Coach';
+        return $this->isEntrenador();
     }
     
     /**
@@ -53,7 +125,11 @@ class User extends Authenticatable
      */
     public function isDeportista()
     {
-        return $this->rol === 'Deportista';
+        $rol = $this->getRolObject();
+        if (!$rol) {
+            return false;
+        }
+        return $rol->nombre === 'Deportista';
     }
     
     /**
@@ -135,5 +211,27 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+    
+    /**
+     * Accessor para el rol - siempre retorna la relación, no el atributo directo
+     */
+    public function getRolAttribute()
+    {
+        // Si la relación ya está cargada, retornarla
+        if ($this->relationLoaded('rol')) {
+            return $this->getRelation('rol');
+        }
+        
+        // Si tenemos rol_id, cargar y retornar la relación
+        if ($this->rol_id) {
+            $rol = $this->rol()->first();
+            if ($rol) {
+                $this->setRelation('rol', $rol);
+                return $rol;
+            }
+        }
+        
+        return null;
     }
 }

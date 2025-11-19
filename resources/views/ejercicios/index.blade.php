@@ -192,15 +192,9 @@
                     </div>
                 @endif
 
-                <!-- Botones -->
+                <!-- Botón Ver Detalle -->
                 <div class="flex space-x-2">
-                    <button class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center space-x-2">
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
-                        </svg>
-                        <span>Iniciar</span>
-                    </button>
-                    <a href="{{ route('ejercicios.show', $ejercicio->id) }}" class="flex-1 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium text-center">
+                    <a href="{{ route('ejercicios.show', $ejercicio->id) }}" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-center">
                         Ver Detalle
                     </a>
                 </div>

@@ -3,6 +3,18 @@
 @section('title', 'Detalle del Ejercicio')
 
 @section('content')
+    @if(session('success'))
+        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-6">
+            {{ session('success') }}
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6">
+            {{ session('error') }}
+        </div>
+    @endif
+
     <div class="mb-6">
         <div class="flex items-center justify-between">
             <div>
@@ -98,14 +110,6 @@
                     </div>
                 </div>
 
-                <div class="flex space-x-4 mt-6">
-                    <button class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center space-x-2">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
-                        </svg>
-                        <span>Iniciar Ejercicio</span>
-                    </button>
-                </div>
             </div>
 
             <!-- Video o Imagen -->
@@ -156,5 +160,6 @@
             </div>
         </div>
     </div>
+
 @endsection
 

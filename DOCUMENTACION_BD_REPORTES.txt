@@ -1,0 +1,984 @@
+================================================================================
+                    DOCUMENTACIÓN DE BASE DE DATOS Y REPORTES
+                         Sistema de Gestión Deportiva
+================================================================================
+
+8.1 DDL - CÓDIGO DE CREACIÓN DE LA BASE DE DATOS
+================================================================================
+
+-- ============================================================================
+-- CREACIÓN DE BASE DE DATOS
+-- ============================================================================
+CREATE DATABASE IF NOT EXISTS bases1 
+CHARACTER SET utf8mb4 
+COLLATE utf8mb4_unicode_ci;
+
+USE bases1;
+
+-- ============================================================================
+-- TABLA: users (Usuarios del sistema)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS users (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    email_verified_at TIMESTAMP NULL DEFAULT NULL,
+    password VARCHAR(255) NOT NULL,
+    remember_token VARCHAR(100) NULL DEFAULT NULL,
+    primer_nombre VARCHAR(255) NULL,
+    segundo_nombre VARCHAR(255) NULL,
+    primer_apellido VARCHAR(255) NULL,
+    segundo_apellido VARCHAR(255) NULL,
+    nombre_usuario VARCHAR(255) NULL UNIQUE,
+    telefonos VARCHAR(255) NULL,
+    direccion TEXT NULL,
+    rol_id BIGINT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_email (email),
+    INDEX idx_nombre_usuario (nombre_usuario),
+    INDEX idx_rol_id (rol_id),
+    CONSTRAINT fk_users_rol FOREIGN KEY (rol_id) REFERENCES roles(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: roles (Roles del sistema)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS roles (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_nombre (nombre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: password_reset_tokens (Tokens de restablecimiento de contraseña)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    email VARCHAR(255) PRIMARY KEY,
+    token VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: sessions (Sesiones de usuario)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id BIGINT UNSIGNED NULL DEFAULT NULL,
+    ip_address VARCHAR(45) NULL DEFAULT NULL,
+    user_agent TEXT NULL DEFAULT NULL,
+    payload LONGTEXT NOT NULL,
+    last_activity INT NOT NULL,
+    INDEX idx_user_id (user_id),
+    INDEX idx_last_activity (last_activity),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: cache (Caché del sistema)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS cache (
+    `key` VARCHAR(255) PRIMARY KEY,
+    value MEDIUMTEXT NOT NULL,
+    expiration INT NOT NULL,
+    INDEX idx_expiration (expiration)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cache_locks (
+    `key` VARCHAR(255) PRIMARY KEY,
+    owner VARCHAR(255) NOT NULL,
+    expiration INT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: jobs (Trabajos en cola)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS jobs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    queue VARCHAR(255) NOT NULL,
+    payload LONGTEXT NOT NULL,
+    attempts TINYINT UNSIGNED NOT NULL,
+    reserved_at INT UNSIGNED NULL DEFAULT NULL,
+    available_at INT UNSIGNED NOT NULL,
+    created_at INT UNSIGNED NOT NULL,
+    INDEX idx_queue (queue)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS job_batches (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    total_jobs INT NOT NULL,
+    pending_jobs INT NOT NULL,
+    failed_jobs INT NOT NULL,
+    failed_job_ids LONGTEXT NOT NULL,
+    options MEDIUMTEXT NULL DEFAULT NULL,
+    cancelled_at INT NULL DEFAULT NULL,
+    created_at INT NOT NULL,
+    finished_at INT NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS failed_jobs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    uuid VARCHAR(255) NOT NULL UNIQUE,
+    connection TEXT NOT NULL,
+    queue TEXT NOT NULL,
+    payload LONGTEXT NOT NULL,
+    exception LONGTEXT NOT NULL,
+    failed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_uuid (uuid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: migrations (Control de migraciones)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS migrations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    migration VARCHAR(255) NOT NULL,
+    batch INT NOT NULL,
+    INDEX idx_migration (migration)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: deportistas (Herencia de usuarios - Deportistas)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS deportistas (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL UNIQUE,
+    entrenador_id BIGINT UNSIGNED NULL,
+    peso DECIMAL(5, 2) NULL,
+    genero VARCHAR(50) NULL,
+    altura DECIMAL(5, 2) NULL,
+    fecha_nacimiento DATE NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_deportistas_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_deportistas_entrenador FOREIGN KEY (entrenador_id) REFERENCES entrenadores(id) ON DELETE SET NULL,
+    INDEX idx_user_id (user_id),
+    INDEX idx_entrenador_id (entrenador_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: entrenadores (Herencia de usuarios - Entrenadores)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS entrenadores (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL UNIQUE,
+    certificaciones TEXT NULL,
+    especialidad VARCHAR(255) NULL,
+    centro_trabajo VARCHAR(255) NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_entrenadores_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: administradores (Herencia de usuarios - Administradores)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS administradores (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL UNIQUE,
+    fecha_modificacion TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_administradores_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: categorias (Categorías de ejercicios)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS categorias (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(255) NOT NULL,
+    descripcion TEXT NULL,
+    icono VARCHAR(255) NULL,
+    color VARCHAR(50) NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_nombre (nombre),
+    INDEX idx_activo (activo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: ejercicios (Ejercicios del sistema)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS ejercicios (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(255) NOT NULL,
+    descripcion TEXT NULL,
+    categoria_id BIGINT UNSIGNED NULL,
+    grupo_muscular VARCHAR(255) NULL,
+    dificultad ENUM('Principiante', 'Intermedio', 'Avanzado') NOT NULL DEFAULT 'Principiante',
+    duracion_minutos INT NULL,
+    calorias_estimadas INT NULL,
+    calificacion DECIMAL(3, 1) NULL DEFAULT 0.0,
+    equipo VARCHAR(255) NULL,
+    instrucciones TEXT NULL,
+    imagen_url VARCHAR(500) NULL,
+    video_url VARCHAR(500) NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    FOREIGN KEY (categoria_id) REFERENCES categorias(id) ON DELETE SET NULL,
+    INDEX idx_nombre (nombre),
+    INDEX idx_categoria_id (categoria_id),
+    INDEX idx_grupo_muscular (grupo_muscular),
+    INDEX idx_dificultad (dificultad),
+    INDEX idx_activo (activo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: tipo_rutinas (Tipos de rutinas)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS tipo_rutinas (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(255) NOT NULL UNIQUE,
+    descripcion TEXT NULL,
+    icono VARCHAR(255) NULL,
+    color VARCHAR(50) NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_nombre (nombre),
+    INDEX idx_activo (activo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: rutinas (Rutinas de entrenamiento)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS rutinas (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NULL,
+    nombre VARCHAR(255) NOT NULL,
+    descripcion TEXT NULL,
+    objetivo VARCHAR(255) NULL,
+    tipo_rutina_id BIGINT UNSIGNED NULL,
+    nivel ENUM('Principiante', 'Intermedio', 'Avanzado') NOT NULL DEFAULT 'Principiante',
+    estado VARCHAR(50) NULL DEFAULT 'Borrador',
+    fecha_inicio DATE NULL,
+    fecha_fin DATE NULL,
+    fecha_publicacion DATE NULL,
+    tiempo_estimado_minutos INT NULL,
+    calorias_estimadas INT NULL,
+    imagen_url VARCHAR(500) NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_rutinas_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (tipo_rutina_id) REFERENCES tipo_rutinas(id) ON DELETE SET NULL,
+    INDEX idx_nombre (nombre),
+    INDEX idx_user_id (user_id),
+    INDEX idx_tipo_rutina_id (tipo_rutina_id),
+    INDEX idx_nivel (nivel),
+    INDEX idx_estado (estado),
+    INDEX idx_fecha_publicacion (fecha_publicacion),
+    INDEX idx_activo (activo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: detalle_rutinas (Detalle de ejercicios en rutinas)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS detalle_rutinas (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    rutina_id BIGINT UNSIGNED NOT NULL,
+    ejercicio_id BIGINT UNSIGNED NOT NULL,
+    orden INT NOT NULL DEFAULT 0,
+    series INT NULL,
+    repeticiones VARCHAR(255) NULL,
+    peso VARCHAR(255) NULL,
+    tiempo INT NULL,
+    tiempo_descanso INT NULL,
+    descanso_segundos INT NULL,
+    notas TEXT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_rutina_ejercicio_rutina FOREIGN KEY (rutina_id) REFERENCES rutinas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rutina_ejercicio_ejercicio FOREIGN KEY (ejercicio_id) REFERENCES ejercicios(id) ON DELETE CASCADE,
+    INDEX idx_rutina_id (rutina_id),
+    INDEX idx_ejercicio_id (ejercicio_id),
+    INDEX idx_orden (orden)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: planes (Planes de suscripción)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS planes (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(255) NOT NULL,
+    descripcion TEXT NULL,
+    precio DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    duracion_dias INT NOT NULL DEFAULT 30,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_nombre (nombre),
+    INDEX idx_activo (activo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: plan_usuario (Relación usuarios-planes)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS plan_usuario (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL,
+    plan_id BIGINT UNSIGNED NOT NULL,
+    fecha_inicio DATE NOT NULL,
+    fecha_fin DATE NOT NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (plan_id) REFERENCES planes(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id),
+    INDEX idx_plan_id (plan_id),
+    INDEX idx_activo (activo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: rutina_plan (Relación rutinas-planes)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS rutina_plan (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    rutina_id BIGINT UNSIGNED NOT NULL,
+    plan_id BIGINT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_rutina_plan_rutina FOREIGN KEY (rutina_id) REFERENCES rutinas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rutina_plan_plan FOREIGN KEY (plan_id) REFERENCES planes(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_rutina_plan (rutina_id, plan_id),
+    INDEX idx_rutina_id (rutina_id),
+    INDEX idx_plan_id (plan_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: rutina_usuario_progreso (Progreso de usuarios en rutinas)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS rutina_usuario_progreso (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL,
+    rutina_id BIGINT UNSIGNED NOT NULL,
+    porcentaje_completado DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    fecha_inicio DATE NULL,
+    fecha_ultima_sesion DATE NULL,
+    sesiones_completadas INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_rutina_progreso_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rutina_progreso_rutina FOREIGN KEY (rutina_id) REFERENCES rutinas(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_user_rutina (user_id, rutina_id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_rutina_id (rutina_id),
+    INDEX idx_porcentaje_completado (porcentaje_completado)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: progresos (Progreso detallado de deportistas)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS progresos (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    deportista_id BIGINT UNSIGNED NOT NULL,
+    detalle_rutina_id BIGINT UNSIGNED NOT NULL,
+    fecha_registro DATE NOT NULL,
+    porcentaje_completado DECIMAL(5, 2) NULL,
+    rendimiento TEXT NULL,
+    calorias_quemadas INT NULL,
+    comentarios TEXT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_progresos_deportista FOREIGN KEY (deportista_id) REFERENCES deportistas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_progresos_detalle_rutina FOREIGN KEY (detalle_rutina_id) REFERENCES detalle_rutinas(id) ON DELETE CASCADE,
+    INDEX idx_deportista_id (deportista_id),
+    INDEX idx_detalle_rutina_id (detalle_rutina_id),
+    INDEX idx_fecha_registro (fecha_registro)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: ejercicio_favoritos (Ejercicios favoritos de deportistas)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS ejercicio_favoritos (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    deportista_id BIGINT UNSIGNED NOT NULL,
+    ejercicio_id BIGINT UNSIGNED NOT NULL,
+    fecha_agregado DATE NOT NULL,
+    nivel_gusto INT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_favoritos_deportista FOREIGN KEY (deportista_id) REFERENCES deportistas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_favoritos_ejercicio FOREIGN KEY (ejercicio_id) REFERENCES ejercicios(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_deportista_ejercicio (deportista_id, ejercicio_id),
+    INDEX idx_deportista_id (deportista_id),
+    INDEX idx_ejercicio_id (ejercicio_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: deportista_ejercicio (Relación deportistas-ejercicios)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS deportista_ejercicio (
+    deportista_id BIGINT UNSIGNED NOT NULL,
+    ejercicio_id BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY (deportista_id, ejercicio_id),
+    CONSTRAINT fk_deportista_ejercicio_deportista FOREIGN KEY (deportista_id) REFERENCES deportistas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_deportista_ejercicio_ejercicio FOREIGN KEY (ejercicio_id) REFERENCES ejercicios(id) ON DELETE CASCADE,
+    INDEX idx_deportista_id (deportista_id),
+    INDEX idx_ejercicio_id (ejercicio_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: recordatorios (Recordatorios de entrenamiento)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS recordatorios (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    deportista_id BIGINT UNSIGNED NOT NULL,
+    frecuencia VARCHAR(255) NOT NULL,
+    estado BOOLEAN NOT NULL DEFAULT TRUE,
+    fecha_asignacion DATE NOT NULL,
+    hora_alerta TIME NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_recordatorios_deportista FOREIGN KEY (deportista_id) REFERENCES deportistas(id) ON DELETE CASCADE,
+    INDEX idx_deportista_id (deportista_id),
+    INDEX idx_estado (estado)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: gamificaciones (Logros y puntos de gamificación)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS gamificaciones (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    deportista_id BIGINT UNSIGNED NOT NULL,
+    fecha_asignacion DATE NOT NULL,
+    logro VARCHAR(255) NOT NULL,
+    puntos INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_gamificaciones_deportista FOREIGN KEY (deportista_id) REFERENCES deportistas(id) ON DELETE CASCADE,
+    INDEX idx_deportista_id (deportista_id),
+    INDEX idx_fecha_asignacion (fecha_asignacion)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: consejos_nutricion (Consejos de nutrición)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS consejos_nutricion (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL,
+    titulo VARCHAR(255) NOT NULL,
+    contenido TEXT NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_consejos_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- TABLA: transacciones (Transacciones de pago)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS transacciones (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    deportista_id BIGINT UNSIGNED NOT NULL,
+    plan_id BIGINT UNSIGNED NOT NULL,
+    monto DECIMAL(10, 2) NOT NULL,
+    fecha_pago TIMESTAMP NOT NULL,
+    estado VARCHAR(50) NOT NULL DEFAULT 'Pendiente',
+    metodo_pago VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_transacciones_deportista FOREIGN KEY (deportista_id) REFERENCES deportistas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_transacciones_plan FOREIGN KEY (plan_id) REFERENCES planes(id) ON DELETE RESTRICT,
+    INDEX idx_deportista_id (deportista_id),
+    INDEX idx_plan_id (plan_id),
+    INDEX idx_estado (estado),
+    INDEX idx_fecha_pago (fecha_pago)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+================================================================================
+8.2 PRUEBA DEL MODELO DE LA BASE DE DATOS - DATOS POBLADOS
+================================================================================
+
+-- ============================================================================
+-- INSERTAR ROLES
+-- ============================================================================
+INSERT INTO roles (nombre, created_at, updated_at) VALUES
+('Administrador', NOW(), NOW()),
+('Entrenador', NOW(), NOW()),
+('Deportista', NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR USUARIOS
+-- ============================================================================
+INSERT INTO users (name, email, password, primer_nombre, segundo_nombre, primer_apellido, segundo_apellido, nombre_usuario, telefonos, direccion, rol_id, created_at, updated_at) VALUES
+('Juan Pérez', 'juan.perez@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Juan', 'Carlos', 'Pérez', 'García', 'juanperez', '3001234567', 'Calle 123 #45-67', 3, NOW(), NOW()),
+('María González', 'maria.gonzalez@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'María', 'Isabel', 'González', 'López', 'mariagonzalez', '3002345678', 'Avenida 456 #78-90', 3, NOW(), NOW()),
+('Carlos Rodríguez', 'carlos.rodriguez@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Carlos', 'Alberto', 'Rodríguez', 'Martínez', 'carlosrodriguez', '3003456789', 'Carrera 789 #12-34', 3, NOW(), NOW()),
+('Ana Martínez', 'ana.martinez@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Ana', 'Lucía', 'Martínez', 'Sánchez', 'anamartinez', '3004567890', 'Calle 321 #56-78', 3, NOW(), NOW()),
+('Pedro Sánchez', 'pedro.sanchez@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Pedro', 'Antonio', 'Sánchez', 'Ramírez', 'pedrosanchez', '3005678901', 'Avenida 654 #90-12', 3, NOW(), NOW()),
+('Laura Fernández', 'laura.fernandez@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Laura', 'Patricia', 'Fernández', 'Torres', 'laurafernandez', '3006789012', 'Carrera 987 #34-56', 2, NOW(), NOW()),
+('Roberto Díaz', 'roberto.diaz@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Roberto', 'Eduardo', 'Díaz', 'Vargas', 'robertodiaz', '3007890123', 'Calle 147 #25-36', 2, NOW(), NOW()),
+('Sofía Morales', 'sofia.morales@email.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Sofía', 'Alejandra', 'Morales', 'Jiménez', 'sofiamorales', '3008901234', 'Avenida 258 #47-58', 1, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR DEPORTISTAS
+-- ============================================================================
+INSERT INTO deportistas (user_id, peso, genero, altura, fecha_nacimiento, created_at, updated_at) VALUES
+(1, 75.5, 'Masculino', 175.0, '1990-05-15', NOW(), NOW()),
+(2, 62.3, 'Femenino', 165.0, '1992-08-20', NOW(), NOW()),
+(3, 80.0, 'Masculino', 180.0, '1988-03-10', NOW(), NOW()),
+(4, 58.7, 'Femenino', 160.0, '1995-11-25', NOW(), NOW()),
+(5, 72.1, 'Masculino', 172.0, '1991-07-30', NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR ENTRENADORES
+-- ============================================================================
+INSERT INTO entrenadores (user_id, certificaciones, especialidad, centro_trabajo, created_at, updated_at) VALUES
+(6, 'Certificación Internacional en Entrenamiento Personal, Certificación en Nutrición Deportiva', 'Fuerza y Acondicionamiento', 'Gimnasio Fitness Pro', NOW(), NOW()),
+(7, 'Certificación en CrossFit, Certificación en Rehabilitación Deportiva', 'CrossFit y Funcional', 'CrossFit Elite', NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR ADMINISTRADORES
+-- ============================================================================
+INSERT INTO administradores (user_id, fecha_modificacion, created_at, updated_at) VALUES
+(8, NOW(), NOW(), NOW());
+
+-- ============================================================================
+-- ASIGNAR ENTRENADORES A DEPORTISTAS
+-- ============================================================================
+UPDATE deportistas SET entrenador_id = 1 WHERE id IN (1, 2, 3);
+UPDATE deportistas SET entrenador_id = 2 WHERE id IN (4, 5);
+
+-- ============================================================================
+-- INSERTAR CATEGORÍAS
+-- ============================================================================
+INSERT INTO categorias (nombre, descripcion, color, activo, created_at, updated_at) VALUES
+('Espalda', 'Ejercicios para fortalecer la espalda, músculos dorsales y lumbares', '#3B82F6', TRUE, NOW(), NOW()),
+('Brazo', 'Ejercicios para bíceps, tríceps y antebrazos', '#EF4444', TRUE, NOW(), NOW()),
+('Glúteos', 'Ejercicios para tonificar y fortalecer los glúteos', '#EC4899', TRUE, NOW(), NOW()),
+('Pecho', 'Ejercicios para pectorales y músculos del pecho', '#F59E0B', TRUE, NOW(), NOW()),
+('Piernas', 'Ejercicios para cuádriceps, isquiotibiales y pantorrillas', '#10B981', TRUE, NOW(), NOW()),
+('Hombros', 'Ejercicios para deltoides y músculos del hombro', '#8B5CF6', TRUE, NOW(), NOW()),
+('Abdomen', 'Ejercicios para core, abdominales y músculos del tronco', '#06B6D4', TRUE, NOW(), NOW()),
+('Cardio', 'Ejercicios cardiovasculares y de resistencia', '#14B8A6', TRUE, NOW(), NOW()),
+('Flexibilidad', 'Ejercicios de estiramiento y movilidad', '#6366F1', TRUE, NOW(), NOW()),
+('Full Body', 'Ejercicios que trabajan múltiples grupos musculares', '#F97316', TRUE, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR EJERCICIOS
+-- ============================================================================
+INSERT INTO ejercicios (nombre, descripcion, categoria_id, grupo_muscular, dificultad, duracion_minutos, calorias_estimadas, calificacion, equipo, instrucciones, activo, created_at, updated_at) VALUES
+('Press de Banca', 'Ejercicio para desarrollar los músculos del pecho', 4, 'Pectorales', 'Intermedio', 30, 150, 4.5, 'Barra, Banco', 'Acuéstate en el banco, baja la barra al pecho y empuja hacia arriba', TRUE, NOW(), NOW()),
+('Sentadillas', 'Ejercicio fundamental para piernas', 5, 'Cuádriceps', 'Principiante', 20, 100, 4.8, 'Ninguno', 'Párate con los pies al ancho de los hombros, baja como si te sentaras', TRUE, NOW(), NOW()),
+('Dominadas', 'Ejercicio para espalda y brazos', 1, 'Dorsales', 'Avanzado', 15, 80, 4.7, 'Barra de dominadas', 'Cuelga de la barra y tira hacia arriba hasta que la barbilla pase la barra', TRUE, NOW(), NOW()),
+('Plancha', 'Ejercicio isométrico para core', 7, 'Abdomen', 'Intermedio', 10, 50, 4.6, 'Ninguno', 'Mantén el cuerpo recto en posición de flexión', TRUE, NOW(), NOW()),
+('Burpees', 'Ejercicio de cuerpo completo', 8, 'Full Body', 'Intermedio', 20, 200, 4.9, 'Ninguno', 'Combina sentadilla, flexión y salto', TRUE, NOW(), NOW()),
+('Curl de Bíceps', 'Ejercicio para bíceps', 2, 'Bíceps', 'Principiante', 15, 60, 4.4, 'Mancuernas', 'Levanta las mancuernas flexionando los codos', TRUE, NOW(), NOW()),
+('Peso Muerto', 'Ejercicio para espalda baja y piernas', 1, 'Espalda Baja', 'Avanzado', 25, 180, 4.8, 'Barra', 'Levanta la barra desde el suelo manteniendo la espalda recta', TRUE, NOW(), NOW()),
+('Flexiones', 'Ejercicio para pecho y tríceps', 4, 'Pectorales', 'Principiante', 15, 80, 4.5, 'Ninguno', 'Baja el cuerpo hasta casi tocar el suelo y empuja', TRUE, NOW(), NOW()),
+('Estocadas', 'Ejercicio para piernas', 5, 'Cuádriceps', 'Intermedio', 20, 120, 4.6, 'Ninguno', 'Da un paso largo hacia adelante y baja la rodilla trasera', TRUE, NOW(), NOW()),
+('Press Militar', 'Ejercicio para hombros', 6, 'Deltoides', 'Intermedio', 20, 100, 4.7, 'Barra o Mancuernas', 'Levanta la barra desde los hombros hacia arriba', TRUE, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR TIPOS DE RUTINAS
+-- ============================================================================
+INSERT INTO tipo_rutinas (nombre, descripcion, color, activo, created_at, updated_at) VALUES
+('Fuerza', 'Rutinas enfocadas en el desarrollo de fuerza muscular', '#EF4444', TRUE, NOW(), NOW()),
+('Cardio', 'Rutinas cardiovasculares para mejorar resistencia', '#10B981', TRUE, NOW(), NOW()),
+('Body', 'Rutinas de entrenamiento con peso corporal', '#3B82F6', TRUE, NOW(), NOW()),
+('Hipertrofia', 'Rutinas para aumentar masa muscular', '#F59E0B', TRUE, NOW(), NOW()),
+('Flexibilidad', 'Rutinas de estiramiento y movilidad', '#8B5CF6', TRUE, NOW(), NOW()),
+('CrossFit', 'Rutinas de alta intensidad funcional', '#EC4899', TRUE, NOW(), NOW()),
+('Pilates', 'Rutinas de fortalecimiento y control corporal', '#06B6D4', TRUE, NOW(), NOW()),
+('Yoga', 'Rutinas de equilibrio mente-cuerpo', '#14B8A6', TRUE, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR RUTINAS
+-- ============================================================================
+INSERT INTO rutinas (user_id, nombre, descripcion, objetivo, tipo_rutina_id, nivel, estado, fecha_inicio, fecha_fin, fecha_publicacion, tiempo_estimado_minutos, calorias_estimadas, activo, created_at, updated_at) VALUES
+(6, 'Rutina de Fuerza Principiante', 'Rutina básica para desarrollar fuerza', 'Ganar fuerza muscular', 1, 'Principiante', 'Publicada', '2024-01-01', '2024-01-31', '2024-01-01', 45, 300, TRUE, NOW(), NOW()),
+(6, 'Rutina Cardio Intensiva', 'Rutina de alta intensidad cardiovascular', 'Mejorar resistencia', 2, 'Intermedio', 'Publicada', '2024-01-01', '2024-01-31', '2024-01-01', 30, 400, TRUE, NOW(), NOW()),
+(7, 'Rutina Full Body', 'Rutina completa de cuerpo entero', 'Desarrollo general', 3, 'Intermedio', 'Publicada', '2024-01-01', '2024-01-31', '2024-01-01', 60, 500, TRUE, NOW(), NOW()),
+(6, 'Rutina Hipertrofia Avanzada', 'Rutina para ganancia de masa muscular', 'Aumentar masa', 4, 'Avanzado', 'Publicada', '2024-01-01', '2024-01-31', '2024-01-01', 90, 600, TRUE, NOW(), NOW()),
+(7, 'Rutina CrossFit WOD', 'Workout of the Day estilo CrossFit', 'Condición física', 6, 'Avanzado', 'Publicada', '2024-01-01', '2024-01-31', '2024-01-01', 20, 350, TRUE, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR DETALLE DE RUTINAS (Ejercicios en rutinas)
+-- ============================================================================
+INSERT INTO detalle_rutinas (rutina_id, ejercicio_id, orden, series, repeticiones, peso, tiempo, tiempo_descanso, descanso_segundos, notas, created_at, updated_at) VALUES
+(1, 2, 1, 3, '12-15', NULL, NULL, NULL, 60, 'Calentamiento previo', NOW(), NOW()),
+(1, 1, 2, 4, '8-10', '60-80kg', NULL, NULL, 90, 'Aumentar peso progresivamente', NOW(), NOW()),
+(1, 6, 3, 3, '12-15', '10-15kg', NULL, NULL, 45, 'Controlar el movimiento', NOW(), NOW()),
+(2, 5, 1, 5, '10', NULL, NULL, NULL, 30, 'Alta intensidad', NOW(), NOW()),
+(2, 8, 2, 4, '15-20', NULL, NULL, NULL, 45, 'Forma correcta', NOW(), NOW()),
+(3, 2, 1, 4, '15', NULL, NULL, NULL, 60, 'Ejercicio base', NOW(), NOW()),
+(3, 8, 2, 3, '12', NULL, NULL, NULL, 45, 'Controlar descenso', NOW(), NOW()),
+(3, 4, 3, 3, '30-60 seg', NULL, NULL, NULL, 60, 'Mantener posición', NOW(), NOW()),
+(4, 1, 1, 5, '6-8', '80-100kg', NULL, NULL, 120, 'Máxima intensidad', NOW(), NOW()),
+(4, 7, 2, 4, '5-6', '100-120kg', NULL, NULL, 180, 'Técnica perfecta', NOW(), NOW()),
+(5, 5, 1, 10, '5', NULL, NULL, NULL, 20, 'AMRAP', NOW(), NOW()),
+(5, 3, 2, 5, '8-10', NULL, NULL, NULL, 30, 'Pull-ups', NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR PLANES
+-- ============================================================================
+INSERT INTO planes (nombre, descripcion, precio, duracion_dias, activo, created_at, updated_at) VALUES
+('Plan Básico', 'Acceso a rutinas básicas y ejercicios', 29.99, 30, TRUE, NOW(), NOW()),
+('Plan Premium', 'Acceso completo a todas las rutinas y seguimiento personalizado', 49.99, 30, TRUE, NOW(), NOW()),
+('Plan Anual', 'Plan premium con descuento anual', 499.99, 365, TRUE, NOW(), NOW()),
+('Plan Mensual Pro', 'Plan premium con entrenador personal', 79.99, 30, TRUE, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR PLANES DE USUARIOS
+-- ============================================================================
+INSERT INTO plan_usuario (user_id, plan_id, fecha_inicio, fecha_fin, activo, created_at, updated_at) VALUES
+(1, 2, '2024-01-01', '2024-01-31', TRUE, NOW(), NOW()),
+(2, 1, '2024-01-01', '2024-01-31', TRUE, NOW(), NOW()),
+(3, 2, '2024-01-01', '2024-01-31', TRUE, NOW(), NOW()),
+(4, 4, '2024-01-01', '2024-01-31', TRUE, NOW(), NOW()),
+(5, 1, '2024-01-01', '2024-01-31', TRUE, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR PROGRESO DE USUARIOS EN RUTINAS
+-- ============================================================================
+INSERT INTO rutina_usuario_progreso (user_id, rutina_id, porcentaje_completado, fecha_inicio, fecha_ultima_sesion, sesiones_completadas, created_at, updated_at) VALUES
+(1, 1, 75.50, '2024-01-01', '2024-01-20', 15, NOW(), NOW()),
+(1, 2, 50.00, '2024-01-05', '2024-01-18', 10, NOW(), NOW()),
+(2, 2, 90.00, '2024-01-01', '2024-01-22', 18, NOW(), NOW()),
+(3, 3, 60.00, '2024-01-01', '2024-01-19', 12, NOW(), NOW()),
+(4, 4, 40.00, '2024-01-01', '2024-01-15', 8, NOW(), NOW()),
+(5, 1, 100.00, '2024-01-01', '2024-01-25', 20, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR PROGRESOS DETALLADOS
+-- ============================================================================
+INSERT INTO progresos (deportista_id, detalle_rutina_id, fecha_registro, porcentaje_completado, rendimiento, calorias_quemadas, comentarios, created_at, updated_at) VALUES
+(1, 1, '2024-01-15', 100.00, 'Excelente', 150, 'Me sentí muy bien', NOW(), NOW()),
+(1, 2, '2024-01-15', 100.00, 'Bueno', 180, 'Pude aumentar el peso', NOW(), NOW()),
+(2, 4, '2024-01-20', 100.00, 'Excelente', 200, 'Rutina muy intensa', NOW(), NOW()),
+(3, 6, '2024-01-18', 100.00, 'Bueno', 120, 'Bien ejecutado', NOW(), NOW()),
+(4, 9, '2024-01-10', 80.00, 'Regular', 250, 'Necesito más fuerza', NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR EJERCICIOS FAVORITOS
+-- ============================================================================
+INSERT INTO ejercicio_favoritos (deportista_id, ejercicio_id, fecha_agregado, nivel_gusto, created_at, updated_at) VALUES
+(1, 1, '2024-01-05', 5, NOW(), NOW()),
+(1, 2, '2024-01-05', 5, NOW(), NOW()),
+(2, 5, '2024-01-10', 5, NOW(), NOW()),
+(3, 3, '2024-01-08', 4, NOW(), NOW()),
+(4, 7, '2024-01-12', 5, NOW(), NOW()),
+(5, 2, '2024-01-06', 5, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR RECORDATORIOS
+-- ============================================================================
+INSERT INTO recordatorios (deportista_id, frecuencia, estado, fecha_asignacion, hora_alerta, created_at, updated_at) VALUES
+(1, 'Lunes, Miércoles, Viernes', TRUE, '2024-01-01', '06:00:00', NOW(), NOW()),
+(2, 'Martes, Jueves, Sábado', TRUE, '2024-01-01', '07:00:00', NOW(), NOW()),
+(3, 'Lunes a Viernes', TRUE, '2024-01-01', '18:00:00', NOW(), NOW()),
+(4, 'Lunes, Miércoles, Viernes', TRUE, '2024-01-01', '19:00:00', NOW(), NOW()),
+(5, 'Todos los días', TRUE, '2024-01-01', '06:30:00', NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR GAMIFICACIONES
+-- ============================================================================
+INSERT INTO gamificaciones (deportista_id, fecha_asignacion, logro, puntos, created_at, updated_at) VALUES
+(1, '2024-01-10', 'Primera semana completada', 100, NOW(), NOW()),
+(1, '2024-01-20', '10 sesiones completadas', 200, NOW(), NOW()),
+(2, '2024-01-15', 'Rutina perfecta', 150, NOW(), NOW()),
+(3, '2024-01-12', 'Mejora de rendimiento', 100, NOW(), NOW()),
+(5, '2024-01-25', 'Rutina completada al 100%', 300, NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR CONSEJOS DE NUTRICIÓN
+-- ============================================================================
+INSERT INTO consejos_nutricion (user_id, titulo, contenido, created_at, updated_at) VALUES
+(6, 'Importancia de la Hidratación', 'Mantén una hidratación adecuada antes, durante y después del entrenamiento. Bebe al menos 2 litros de agua al día.', NOW(), NOW()),
+(6, 'Proteínas Post-Entrenamiento', 'Consume proteínas dentro de los 30 minutos posteriores al entrenamiento para optimizar la recuperación muscular.', NOW(), NOW()),
+(7, 'Carbohidratos Complejos', 'Incluye carbohidratos complejos como avena, arroz integral y batata en tu dieta para energía sostenida.', NOW(), NOW()),
+(7, 'Descanso y Recuperación', 'El descanso es tan importante como el entrenamiento. Duerme al menos 7-8 horas diarias.', NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR TRANSACCIONES
+-- ============================================================================
+INSERT INTO transacciones (deportista_id, plan_id, monto, fecha_pago, estado, metodo_pago, created_at, updated_at) VALUES
+(1, 2, 49.99, '2024-01-01 10:00:00', 'Completada', 'Tarjeta de Crédito', NOW(), NOW()),
+(2, 1, 29.99, '2024-01-01 11:00:00', 'Completada', 'PayPal', NOW(), NOW()),
+(3, 2, 49.99, '2024-01-01 12:00:00', 'Completada', 'Tarjeta de Débito', NOW(), NOW()),
+(4, 4, 79.99, '2024-01-01 13:00:00', 'Completada', 'Tarjeta de Crédito', NOW(), NOW()),
+(5, 1, 29.99, '2024-01-01 14:00:00', 'Completada', 'Transferencia', NOW(), NOW());
+
+-- ============================================================================
+-- INSERTAR RELACIÓN RUTINA-PLAN
+-- ============================================================================
+INSERT INTO rutina_plan (rutina_id, plan_id, created_at, updated_at) VALUES
+(1, 1, NOW(), NOW()),
+(1, 2, NOW(), NOW()),
+(2, 2, NOW(), NOW()),
+(3, 2, NOW(), NOW()),
+(4, 4, NOW(), NOW()),
+(5, 2, NOW(), NOW());
+
+
+================================================================================
+8.3 REPORTES - CÓDIGO SQL DE LAS CONSULTAS
+================================================================================
+
+-- ============================================================================
+-- REPORTES FÁCILES (3 reportes)
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- REPORTE FÁCIL 1: Listar todos los usuarios con su rol
+-- ----------------------------------------------------------------------------
+SELECT 
+    u.id,
+    u.name AS nombre_completo,
+    u.email,
+    u.nombre_usuario,
+    r.nombre AS rol
+FROM users u
+INNER JOIN roles r ON u.rol_id = r.id
+ORDER BY u.name;
+
+-- ----------------------------------------------------------------------------
+-- REPORTE FÁCIL 2: Contar ejercicios por categoría
+-- ----------------------------------------------------------------------------
+SELECT 
+    c.nombre AS categoria,
+    COUNT(e.id) AS total_ejercicios
+FROM categorias c
+LEFT JOIN ejercicios e ON c.id = e.categoria_id
+WHERE e.activo = TRUE OR e.activo IS NULL
+GROUP BY c.id, c.nombre
+ORDER BY total_ejercicios DESC;
+
+-- ----------------------------------------------------------------------------
+-- REPORTE FÁCIL 3: Listar todas las rutinas publicadas con su tipo
+-- ----------------------------------------------------------------------------
+SELECT 
+    r.id,
+    r.nombre AS rutina,
+    tr.nombre AS tipo_rutina,
+    r.nivel,
+    r.estado,
+    r.tiempo_estimado_minutos AS duracion_minutos,
+    r.calorias_estimadas
+FROM rutinas r
+LEFT JOIN tipo_rutinas tr ON r.tipo_rutina_id = tr.id
+WHERE r.estado = 'Publicada' AND r.activo = TRUE
+ORDER BY r.nombre;
+
+-- ============================================================================
+-- REPORTES MEDIOS (4 reportes)
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- REPORTE MEDIO 1: Deportistas con su entrenador asignado y plan activo
+-- ----------------------------------------------------------------------------
+SELECT 
+    u.name AS deportista,
+    u.email,
+    d.peso,
+    d.altura,
+    CONCAT(eu.name, ' (', er.especialidad, ')') AS entrenador,
+    p.nombre AS plan_activo,
+    pu.fecha_inicio,
+    pu.fecha_fin
+FROM deportistas d
+INNER JOIN users u ON d.user_id = u.id
+LEFT JOIN entrenadores en ON d.entrenador_id = en.id
+LEFT JOIN users eu ON en.user_id = eu.id
+LEFT JOIN roles er ON eu.rol_id = er.id
+LEFT JOIN plan_usuario pu ON u.id = pu.user_id AND pu.activo = TRUE
+LEFT JOIN planes p ON pu.plan_id = p.id
+ORDER BY u.name;
+
+-- ----------------------------------------------------------------------------
+-- REPORTE MEDIO 2: Ejercicios más populares (más favoritos)
+-- ----------------------------------------------------------------------------
+SELECT 
+    e.nombre AS ejercicio,
+    c.nombre AS categoria,
+    e.dificultad,
+    COUNT(ef.id) AS total_favoritos,
+    AVG(ef.nivel_gusto) AS promedio_calificacion
+FROM ejercicios e
+INNER JOIN categorias c ON e.categoria_id = c.id
+LEFT JOIN ejercicio_favoritos ef ON e.id = ef.ejercicio_id
+WHERE e.activo = TRUE
+GROUP BY e.id, e.nombre, c.nombre, e.dificultad
+ORDER BY total_favoritos DESC, promedio_calificacion DESC
+LIMIT 10;
+
+-- ----------------------------------------------------------------------------
+-- REPORTE MEDIO 3: Progreso de deportistas en sus rutinas
+-- ----------------------------------------------------------------------------
+SELECT 
+    u.name AS deportista,
+    r.nombre AS rutina,
+    rup.porcentaje_completado,
+    rup.sesiones_completadas,
+    rup.fecha_inicio,
+    rup.fecha_ultima_sesion,
+    CASE 
+        WHEN rup.porcentaje_completado = 100 THEN 'Completada'
+        WHEN rup.porcentaje_completado >= 75 THEN 'Avanzada'
+        WHEN rup.porcentaje_completado >= 50 THEN 'En Progreso'
+        ELSE 'Iniciada'
+    END AS estado_progreso
+FROM rutina_usuario_progreso rup
+INNER JOIN users u ON rup.user_id = u.id
+INNER JOIN rutinas r ON rup.rutina_id = r.id
+ORDER BY rup.porcentaje_completado DESC, u.name;
+
+-- ----------------------------------------------------------------------------
+-- REPORTE MEDIO 4: Ingresos por plan y estado de transacciones
+-- ----------------------------------------------------------------------------
+SELECT 
+    p.nombre AS plan,
+    COUNT(t.id) AS total_transacciones,
+    SUM(CASE WHEN t.estado = 'Completada' THEN t.monto ELSE 0 END) AS ingresos_completados,
+    SUM(CASE WHEN t.estado = 'Pendiente' THEN t.monto ELSE 0 END) AS ingresos_pendientes,
+    SUM(CASE WHEN t.estado = 'Completada' THEN 1 ELSE 0 END) AS transacciones_completadas,
+    SUM(CASE WHEN t.estado = 'Pendiente' THEN 1 ELSE 0 END) AS transacciones_pendientes
+FROM planes p
+LEFT JOIN transacciones t ON p.id = t.plan_id
+GROUP BY p.id, p.nombre
+ORDER BY ingresos_completados DESC;
+
+-- ============================================================================
+-- REPORTES DIFÍCILES (3 reportes)
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- REPORTE DIFÍCIL 1: Análisis completo de rendimiento de deportistas
+-- Incluye: progreso, logros, rutinas completadas, calorías quemadas
+-- ----------------------------------------------------------------------------
+SELECT 
+    u.id AS deportista_id,
+    u.name AS deportista,
+    u.email,
+    d.peso,
+    d.altura,
+    -- Estadísticas de rutinas
+    COUNT(DISTINCT rup.rutina_id) AS total_rutinas_asignadas,
+    COUNT(DISTINCT CASE WHEN rup.porcentaje_completado = 100 THEN rup.rutina_id END) AS rutinas_completadas,
+    AVG(rup.porcentaje_completado) AS promedio_progreso,
+    SUM(rup.sesiones_completadas) AS total_sesiones,
+    -- Estadísticas de progresos detallados
+    SUM(p.calorias_quemadas) AS total_calorias_quemadas,
+    AVG(p.porcentaje_completado) AS promedio_completado_detalle,
+    -- Estadísticas de gamificación
+    COUNT(DISTINCT g.id) AS total_logros,
+    SUM(g.puntos) AS total_puntos,
+    -- Estadísticas de ejercicios favoritos
+    COUNT(DISTINCT ef.ejercicio_id) AS ejercicios_favoritos,
+    -- Plan activo
+    MAX(pu.nombre) AS plan_activo
+FROM deportistas d
+INNER JOIN users u ON d.user_id = u.id
+LEFT JOIN rutina_usuario_progreso rup ON u.id = rup.user_id
+LEFT JOIN progresos p ON d.id = p.deportista_id
+LEFT JOIN gamificaciones g ON d.id = g.deportista_id
+LEFT JOIN ejercicio_favoritos ef ON d.id = ef.deportista_id
+LEFT JOIN plan_usuario pu_join ON u.id = pu_join.user_id AND pu_join.activo = TRUE
+LEFT JOIN planes pu ON pu_join.plan_id = pu.id
+GROUP BY u.id, u.name, u.email, d.peso, d.altura
+ORDER BY total_puntos DESC, promedio_progreso DESC;
+
+-- ----------------------------------------------------------------------------
+-- REPORTE DIFÍCIL 2: Análisis de efectividad de rutinas y ejercicios
+-- Evalúa qué rutinas y ejercicios tienen mejor aceptación y completitud
+-- ----------------------------------------------------------------------------
+SELECT 
+    r.id AS rutina_id,
+    r.nombre AS rutina,
+    tr.nombre AS tipo_rutina,
+    r.nivel,
+    u.name AS creador,
+    -- Estadísticas de uso
+    COUNT(DISTINCT rup.user_id) AS total_usuarios,
+    COUNT(DISTINCT CASE WHEN rup.porcentaje_completado = 100 THEN rup.user_id END) AS usuarios_completaron,
+    AVG(rup.porcentaje_completado) AS promedio_completado,
+    AVG(rup.sesiones_completadas) AS promedio_sesiones,
+    -- Estadísticas de ejercicios en la rutina
+    COUNT(DISTINCT dr.ejercicio_id) AS total_ejercicios,
+    -- Estadísticas de progreso detallado
+    COUNT(DISTINCT p.id) AS total_registros_progreso,
+    AVG(p.porcentaje_completado) AS promedio_progreso_detalle,
+    SUM(p.calorias_quemadas) AS total_calorias_quemadas,
+    -- Calificación promedio de ejercicios en la rutina
+    AVG(e.calificacion) AS calificacion_promedio_ejercicios,
+    -- Efectividad (porcentaje de usuarios que completaron)
+    CASE 
+        WHEN COUNT(DISTINCT rup.user_id) > 0 
+        THEN (COUNT(DISTINCT CASE WHEN rup.porcentaje_completado = 100 THEN rup.user_id END) * 100.0 / COUNT(DISTINCT rup.user_id))
+        ELSE 0 
+    END AS tasa_completitud_porcentaje
+FROM rutinas r
+LEFT JOIN tipo_rutinas tr ON r.tipo_rutina_id = tr.id
+LEFT JOIN users u ON r.user_id = u.id
+LEFT JOIN rutina_usuario_progreso rup ON r.id = rup.rutina_id
+LEFT JOIN detalle_rutinas dr ON r.id = dr.rutina_id
+LEFT JOIN ejercicios e ON dr.ejercicio_id = e.id
+LEFT JOIN progresos p ON dr.id = p.detalle_rutina_id
+WHERE r.activo = TRUE
+GROUP BY r.id, r.nombre, tr.nombre, r.nivel, u.name
+HAVING total_usuarios > 0
+ORDER BY tasa_completitud_porcentaje DESC, promedio_completado DESC;
+
+-- ----------------------------------------------------------------------------
+-- REPORTE DIFÍCIL 3: Dashboard completo del sistema
+-- Incluye métricas generales, usuarios activos, ingresos, actividad
+-- ----------------------------------------------------------------------------
+SELECT 
+    -- Métricas de usuarios
+    (SELECT COUNT(*) FROM users) AS total_usuarios,
+    (SELECT COUNT(*) FROM users u INNER JOIN roles r ON u.rol_id = r.id WHERE r.nombre = 'Deportista') AS total_deportistas,
+    (SELECT COUNT(*) FROM users u INNER JOIN roles r ON u.rol_id = r.id WHERE r.nombre = 'Entrenador') AS total_entrenadores,
+    (SELECT COUNT(*) FROM users u INNER JOIN roles r ON u.rol_id = r.id WHERE r.nombre = 'Administrador') AS total_administradores,
+    -- Métricas de planes activos
+    (SELECT COUNT(*) FROM plan_usuario WHERE activo = TRUE) AS planes_activos,
+    (SELECT COUNT(DISTINCT user_id) FROM plan_usuario WHERE activo = TRUE) AS usuarios_con_plan,
+    -- Métricas de rutinas
+    (SELECT COUNT(*) FROM rutinas WHERE activo = TRUE AND estado = 'Publicada') AS rutinas_publicadas,
+    (SELECT COUNT(*) FROM rutinas WHERE activo = TRUE) AS total_rutinas,
+    -- Métricas de ejercicios
+    (SELECT COUNT(*) FROM ejercicios WHERE activo = TRUE) AS total_ejercicios_activos,
+    (SELECT COUNT(DISTINCT categoria_id) FROM ejercicios WHERE activo = TRUE) AS categorias_con_ejercicios,
+    -- Métricas de actividad
+    (SELECT COUNT(*) FROM rutina_usuario_progreso WHERE porcentaje_completado > 0) AS rutinas_en_progreso,
+    (SELECT COUNT(*) FROM rutina_usuario_progreso WHERE porcentaje_completado = 100) AS rutinas_completadas,
+    (SELECT SUM(sesiones_completadas) FROM rutina_usuario_progreso) AS total_sesiones_completadas,
+    -- Métricas de progreso
+    (SELECT COUNT(*) FROM progresos) AS total_registros_progreso,
+    (SELECT SUM(calorias_quemadas) FROM progresos) AS total_calorias_quemadas,
+    (SELECT AVG(porcentaje_completado) FROM progresos) AS promedio_completado_progresos,
+    -- Métricas de gamificación
+    (SELECT COUNT(*) FROM gamificaciones) AS total_logros_otorgados,
+    (SELECT SUM(puntos) FROM gamificaciones) AS total_puntos_otorgados,
+    (SELECT COUNT(DISTINCT deportista_id) FROM gamificaciones) AS deportistas_con_logros,
+    -- Métricas financieras
+    (SELECT COUNT(*) FROM transacciones WHERE estado = 'Completada') AS transacciones_completadas,
+    (SELECT SUM(monto) FROM transacciones WHERE estado = 'Completada') AS ingresos_totales,
+    (SELECT AVG(monto) FROM transacciones WHERE estado = 'Completada') AS promedio_transaccion,
+    (SELECT COUNT(*) FROM transacciones WHERE estado = 'Pendiente') AS transacciones_pendientes,
+    -- Métricas de favoritos
+    (SELECT COUNT(*) FROM ejercicio_favoritos) AS total_ejercicios_favoritos,
+    (SELECT COUNT(DISTINCT deportista_id) FROM ejercicio_favoritos) AS deportistas_con_favoritos,
+    -- Métricas de recordatorios
+    (SELECT COUNT(*) FROM recordatorios WHERE estado = TRUE) AS recordatorios_activos,
+    -- Métricas de consejos
+    (SELECT COUNT(*) FROM consejos_nutricion) AS total_consejos_nutricion,
+    -- Fechas importantes
+    (SELECT MIN(created_at) FROM users) AS fecha_primer_usuario,
+    (SELECT MAX(created_at) FROM users) AS fecha_ultimo_usuario,
+    (SELECT MAX(fecha_pago) FROM transacciones WHERE estado = 'Completada') AS fecha_ultima_transaccion;
+
+================================================================================
+                                FIN DEL DOCUMENTO
+================================================================================
+

@@ -20,7 +20,6 @@ class EjercicioController extends Controller
 
         // Si el usuario no tiene plan activo Y no es Administrador, no puede ver ejercicios
         if (!$planActivo && !$user->isAdministrador()) {
-            // Crear un paginador vacío para evitar errores en la vista
             $ejerciciosVacios = new \Illuminate\Pagination\LengthAwarePaginator(
                 collect([]),
                 0,
@@ -37,66 +36,75 @@ class EjercicioController extends Controller
             ]);
         }
 
-        // Si el usuario es Administrador, puede ver todos los ejercicios
-        // Si no, solo los ejercicios asignados a su plan
-        $query = DB::table('ejercicios')
-            ->leftJoin('categorias', 'ejercicios.categoria_id', '=', 'categorias.id')
-            ->where('ejercicios.activo', true);
+        // Construir query base con SQL directo
+        $whereConditions = ["e.activo = 1"];
+        $params = [];
 
         if (!$user->isAdministrador()) {
-            // Obtener IDs de ejercicios asignados al plan del usuario usando SQL
-            $ejerciciosPlanIds = DB::table('plan_ejercicio')
-                ->where('plan_id', $planActivo->id)
-                ->pluck('ejercicio_id')
-                ->toArray();
+            // Obtener IDs de ejercicios asignados al plan del usuario
+            $ejerciciosPlanIds = DB::select("SELECT ejercicio_id FROM plan_ejercicio WHERE plan_id = ?", [$planActivo->id]);
+            $ejerciciosPlanIds = collect($ejerciciosPlanIds)->pluck('ejercicio_id')->toArray();
             
             if (empty($ejerciciosPlanIds)) {
-                // Si no hay ejercicios asignados, devolver lista vacía
                 $ejerciciosPlanIds = [0]; // Forzar resultado vacío
             }
-            $query->whereIn('ejercicios.id', $ejerciciosPlanIds);
+            
+            $placeholders = implode(',', array_fill(0, count($ejerciciosPlanIds), '?'));
+            $whereConditions[] = "e.id IN ({$placeholders})";
+            $params = array_merge($params, $ejerciciosPlanIds);
         }
 
-        // Filtro por búsqueda (nombre)
+        // Filtro por búsqueda
         if ($request->filled('buscar')) {
             $buscar = '%' . $request->buscar . '%';
-            $query->where(function($q) use ($buscar) {
-                $q->where('ejercicios.nombre', 'LIKE', $buscar)
-                  ->orWhere('ejercicios.descripcion', 'LIKE', $buscar)
-                  ->orWhere('ejercicios.grupo_muscular', 'LIKE', $buscar);
-            });
+            $whereConditions[] = "(e.nombre LIKE ? OR e.descripcion LIKE ? OR e.grupo_muscular LIKE ?)";
+            $params[] = $buscar;
+            $params[] = $buscar;
+            $params[] = $buscar;
         }
 
         // Filtro por categoría
         if ($request->filled('categoria_id') && $request->categoria_id !== 'Todos') {
-            $query->where('ejercicios.categoria_id', $request->categoria_id);
+            $whereConditions[] = "e.categoria_id = ?";
+            $params[] = $request->categoria_id;
         }
 
-        // Filtro por dificultad (nivel)
+        // Filtro por dificultad
         if ($request->filled('dificultad') && $request->dificultad !== 'Todos') {
-            $query->where('ejercicios.dificultad', $request->dificultad);
+            $whereConditions[] = "e.dificultad = ?";
+            $params[] = $request->dificultad;
         }
 
-        // Seleccionar campos
-        $query->select(
-            'ejercicios.*',
-            'categorias.nombre as categoria_nombre',
-            'categorias.color as categoria_color'
-        );
+        $whereClause = implode(' AND ', $whereConditions);
 
-        // Paginación manual
+        // Paginación
         $perPage = 12;
         $currentPage = $request->get('page', 1);
         $offset = ($currentPage - 1) * $perPage;
 
-        $total = $query->count();
-        $ejerciciosData = $query->orderBy('ejercicios.nombre')
-            ->offset($offset)
-            ->limit($perPage)
-            ->get();
+        // Contar total
+        $total = DB::selectOne("
+            SELECT COUNT(*) as total 
+            FROM ejercicios e
+            LEFT JOIN categorias c ON e.categoria_id = c.id
+            WHERE {$whereClause}
+        ", $params)->total ?? 0;
 
-        // Transformar datos para agregar categoría como objeto
-        $ejercicios = $ejerciciosData->map(function($ejercicio) {
+        // Obtener ejercicios
+        $ejerciciosData = DB::select("
+            SELECT 
+                e.*,
+                c.nombre as categoria_nombre,
+                c.color as categoria_color
+            FROM ejercicios e
+            LEFT JOIN categorias c ON e.categoria_id = c.id
+            WHERE {$whereClause}
+            ORDER BY e.nombre
+            LIMIT ? OFFSET ?
+        ", array_merge($params, [$perPage, $offset]));
+
+        // Transformar datos
+        $ejercicios = collect($ejerciciosData)->map(function($ejercicio) {
             if ($ejercicio->categoria_id && $ejercicio->categoria_nombre) {
                 $ejercicio->categoria = (object) [
                     'id' => $ejercicio->categoria_id,
@@ -104,7 +112,6 @@ class EjercicioController extends Controller
                     'color' => $ejercicio->categoria_color,
                 ];
             }
-            // Agregar color_dificultad (accessor del modelo ahora manual)
             $ejercicio->color_dificultad = match($ejercicio->dificultad) {
                 'Principiante' => 'bg-green-100 text-green-700',
                 'Intermedio' => 'bg-yellow-100 text-yellow-700',
@@ -124,19 +131,21 @@ class EjercicioController extends Controller
         );
 
         // Obtener categorías
-        $categoriasQuery = DB::table('categorias')
-            ->where('activo', true);
-
         if (!$user->isAdministrador()) {
-            $categoriasIds = $ejerciciosData->pluck('categoria_id')->filter()->unique()->toArray();
+            $categoriasIds = collect($ejerciciosData)->pluck('categoria_id')->filter()->unique()->toArray();
             if (!empty($categoriasIds)) {
-                $categoriasQuery->whereIn('id', $categoriasIds);
+                $placeholders = implode(',', array_fill(0, count($categoriasIds), '?'));
+                $categorias = DB::select("
+                    SELECT * FROM categorias 
+                    WHERE activo = 1 AND id IN ({$placeholders})
+                    ORDER BY nombre
+                ", $categoriasIds);
             } else {
-                $categoriasQuery->whereRaw('1 = 0'); // Forzar resultado vacío
+                $categorias = [];
             }
+        } else {
+            $categorias = DB::select("SELECT * FROM categorias WHERE activo = 1 ORDER BY nombre");
         }
-
-        $categorias = $categoriasQuery->orderBy('nombre')->get();
 
         return view('ejercicios.index', compact('ejercicios', 'categorias', 'planActivo'));
     }
@@ -146,15 +155,8 @@ class EjercicioController extends Controller
      */
     public function create()
     {
-        $categorias = DB::table('categorias')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
-
-        $planes = DB::table('planes')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
+        $categorias = DB::select("SELECT * FROM categorias WHERE activo = 1 ORDER BY nombre");
+        $planes = DB::select("SELECT * FROM planes WHERE activo = 1 ORDER BY nombre");
 
         return view('ejercicios.create', compact('categorias', 'planes'));
     }
@@ -185,36 +187,40 @@ class EjercicioController extends Controller
         DB::beginTransaction();
         try {
             // Insertar ejercicio
-            $ejercicioId = DB::table('ejercicios')->insertGetId([
-                'nombre' => $request->nombre,
-                'descripcion' => $request->descripcion,
-                'categoria_id' => $request->categoria_id,
-                'grupo_muscular' => $request->grupo_muscular,
-                'dificultad' => $request->dificultad,
-                'duracion_minutos' => $request->duracion_minutos,
-                'calorias_estimadas' => $request->calorias_estimadas,
-                'calificacion' => $request->calificacion ?? 0,
-                'equipo' => $request->equipo,
-                'instrucciones' => $request->instrucciones,
-                'imagen_url' => $request->imagen_url,
-                'video_url' => $request->video_url,
-                'activo' => $request->has('activo') ? true : false,
-                'created_at' => now(),
-                'updated_at' => now(),
+            DB::insert("
+                INSERT INTO ejercicios (
+                    nombre, descripcion, categoria_id, grupo_muscular, dificultad,
+                    duracion_minutos, calorias_estimadas, calificacion, equipo,
+                    instrucciones, imagen_url, video_url, activo, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ", [
+                $request->nombre,
+                $request->descripcion,
+                $request->categoria_id,
+                $request->grupo_muscular,
+                $request->dificultad,
+                $request->duracion_minutos,
+                $request->calorias_estimadas,
+                $request->calificacion ?? 0,
+                $request->equipo,
+                $request->instrucciones,
+                $request->imagen_url,
+                $request->video_url,
+                $request->has('activo') ? 1 : 0,
+                now(),
+                now()
             ]);
+
+            $ejercicioId = DB::getPdo()->lastInsertId();
 
             // Asignar planes al ejercicio
             if ($request->filled('planes')) {
-                $planesData = [];
                 foreach ($request->planes as $planId) {
-                    $planesData[] = [
-                        'plan_id' => $planId,
-                        'ejercicio_id' => $ejercicioId,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+                    DB::insert("
+                        INSERT INTO plan_ejercicio (plan_id, ejercicio_id, created_at, updated_at)
+                        VALUES (?, ?, ?, ?)
+                    ", [$planId, $ejercicioId, now(), now()]);
                 }
-                DB::table('plan_ejercicio')->insert($planesData);
             }
 
             DB::commit();
@@ -230,15 +236,15 @@ class EjercicioController extends Controller
      */
     public function show($ejercicio)
     {
-        $ejercicioData = DB::table('ejercicios')
-            ->leftJoin('categorias', 'ejercicios.categoria_id', '=', 'categorias.id')
-            ->where('ejercicios.id', $ejercicio)
-            ->select(
-                'ejercicios.*',
-                'categorias.nombre as categoria_nombre',
-                'categorias.color as categoria_color'
-            )
-            ->first();
+        $ejercicioData = DB::selectOne("
+            SELECT 
+                e.*,
+                c.nombre as categoria_nombre,
+                c.color as categoria_color
+            FROM ejercicios e
+            LEFT JOIN categorias c ON e.categoria_id = c.id
+            WHERE e.id = ?
+        ", [$ejercicio]);
 
         if (!$ejercicioData) {
             abort(404, 'Ejercicio no encontrado');
@@ -261,7 +267,95 @@ class EjercicioController extends Controller
             default => 'bg-gray-100 text-gray-700',
         };
 
-        return view('ejercicios.show', ['ejercicio' => $ejercicioData]);
+        // Obtener progreso del usuario
+        $user = Auth::user();
+        $progresoHoy = DB::selectOne("
+            SELECT * FROM ejercicio_usuario_progreso 
+            WHERE user_id = ? AND ejercicio_id = ? AND fecha_ejecucion = ?
+        ", [$user->id, $ejercicio, now()->toDateString()]);
+
+        $vecesCompletado = DB::selectOne("
+            SELECT SUM(veces_completado) as total 
+            FROM ejercicio_usuario_progreso 
+            WHERE user_id = ? AND ejercicio_id = ?
+        ", [$user->id, $ejercicio])->total ?? 0;
+
+        return view('ejercicios.show', [
+            'ejercicio' => $ejercicioData,
+            'progresoHoy' => $progresoHoy,
+            'vecesCompletado' => $vecesCompletado
+        ]);
+    }
+
+    /**
+     * Marca un ejercicio individual como completado
+     */
+    public function complete(Request $request, $ejercicio)
+    {
+        $request->validate([
+            'rendimiento' => 'nullable|string|max:1000',
+            'calorias_quemadas' => 'nullable|integer|min:0',
+            'comentarios' => 'nullable|string|max:1000',
+        ]);
+
+        /** @var User $user */
+        $user = Auth::user();
+
+        // Verificar que el ejercicio existe
+        $ejercicioData = DB::selectOne("SELECT * FROM ejercicios WHERE id = ?", [$ejercicio]);
+        if (!$ejercicioData) {
+            return response()->json(['error' => 'Ejercicio no encontrado.'], 404);
+        }
+
+        $hoy = now()->toDateString();
+
+        // Verificar si ya está completado hoy
+        $progresoExistente = DB::selectOne("
+            SELECT * FROM ejercicio_usuario_progreso 
+            WHERE user_id = ? AND ejercicio_id = ? AND fecha_ejecucion = ?
+        ", [$user->id, $ejercicio, $hoy]);
+
+        if ($progresoExistente) {
+            // Si ya existe, incrementar veces completado
+            DB::update("
+                UPDATE ejercicio_usuario_progreso SET 
+                    veces_completado = veces_completado + 1,
+                    rendimiento = ?,
+                    calorias_quemadas = ?,
+                    comentarios = ?,
+                    updated_at = ?
+                WHERE id = ?
+            ", [
+                $request->rendimiento ?? $progresoExistente->rendimiento,
+                $request->calorias_quemadas ?? $progresoExistente->calorias_quemadas,
+                $request->comentarios ?? $progresoExistente->comentarios,
+                now(),
+                $progresoExistente->id
+            ]);
+        } else {
+            // Si no existe, crear nuevo registro
+            DB::insert("
+                INSERT INTO ejercicio_usuario_progreso (
+                    user_id, ejercicio_id, fecha_ejecucion, veces_completado,
+                    rendimiento, calorias_quemadas, comentarios, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ", [
+                $user->id,
+                $ejercicio,
+                $hoy,
+                1,
+                $request->rendimiento,
+                $request->calorias_quemadas,
+                $request->comentarios,
+                now(),
+                now()
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ejercicio marcado como completado',
+        ]);
     }
 
     /**
@@ -269,28 +363,17 @@ class EjercicioController extends Controller
      */
     public function edit($ejercicio)
     {
-        $ejercicioData = DB::table('ejercicios')
-            ->where('id', $ejercicio)
-            ->first();
+        $ejercicioData = DB::selectOne("SELECT * FROM ejercicios WHERE id = ?", [$ejercicio]);
 
         if (!$ejercicioData) {
             abort(404, 'Ejercicio no encontrado');
         }
 
-        $categorias = DB::table('categorias')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
+        $categorias = DB::select("SELECT * FROM categorias WHERE activo = 1 ORDER BY nombre");
+        $planes = DB::select("SELECT * FROM planes WHERE activo = 1 ORDER BY nombre");
 
-        $planes = DB::table('planes')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
-
-        $planesAsignados = DB::table('plan_ejercicio')
-            ->where('ejercicio_id', $ejercicio)
-            ->pluck('plan_id')
-            ->toArray();
+        $planesAsignados = DB::select("SELECT plan_id FROM plan_ejercicio WHERE ejercicio_id = ?", [$ejercicio]);
+        $planesAsignados = collect($planesAsignados)->pluck('plan_id')->toArray();
 
         return view('ejercicios.edit', [
             'ejercicio' => $ejercicioData,
@@ -306,7 +389,7 @@ class EjercicioController extends Controller
     public function update(Request $request, $ejercicio)
     {
         // Verificar que el ejercicio existe
-        $ejercicioData = DB::table('ejercicios')->where('id', $ejercicio)->first();
+        $ejercicioData = DB::selectOne("SELECT * FROM ejercicios WHERE id = ?", [$ejercicio]);
         if (!$ejercicioData) {
             abort(404, 'Ejercicio no encontrado');
         }
@@ -331,36 +414,40 @@ class EjercicioController extends Controller
 
         DB::beginTransaction();
         try {
-            DB::table('ejercicios')->where('id', $ejercicio)->update([
-                'nombre' => $request->nombre,
-                'descripcion' => $request->descripcion,
-                'categoria_id' => $request->categoria_id,
-                'grupo_muscular' => $request->grupo_muscular,
-                'dificultad' => $request->dificultad,
-                'duracion_minutos' => $request->duracion_minutos,
-                'calorias_estimadas' => $request->calorias_estimadas,
-                'calificacion' => $request->calificacion ?? 0,
-                'equipo' => $request->equipo,
-                'instrucciones' => $request->instrucciones,
-                'imagen_url' => $request->imagen_url,
-                'video_url' => $request->video_url,
-                'activo' => $request->has('activo') ? true : false,
-                'updated_at' => now(),
+            DB::update("
+                UPDATE ejercicios SET 
+                    nombre = ?, descripcion = ?, categoria_id = ?, grupo_muscular = ?,
+                    dificultad = ?, duracion_minutos = ?, calorias_estimadas = ?,
+                    calificacion = ?, equipo = ?, instrucciones = ?, imagen_url = ?,
+                    video_url = ?, activo = ?, updated_at = ?
+                WHERE id = ?
+            ", [
+                $request->nombre,
+                $request->descripcion,
+                $request->categoria_id,
+                $request->grupo_muscular,
+                $request->dificultad,
+                $request->duracion_minutos,
+                $request->calorias_estimadas,
+                $request->calificacion ?? 0,
+                $request->equipo,
+                $request->instrucciones,
+                $request->imagen_url,
+                $request->video_url,
+                $request->has('activo') ? 1 : 0,
+                now(),
+                $ejercicio
             ]);
 
             // Actualizar asignación de planes
-            DB::table('plan_ejercicio')->where('ejercicio_id', $ejercicio)->delete();
+            DB::delete("DELETE FROM plan_ejercicio WHERE ejercicio_id = ?", [$ejercicio]);
             if ($request->filled('planes')) {
-                $planesData = [];
                 foreach ($request->planes as $planId) {
-                    $planesData[] = [
-                        'plan_id' => $planId,
-                        'ejercicio_id' => $ejercicio,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+                    DB::insert("
+                        INSERT INTO plan_ejercicio (plan_id, ejercicio_id, created_at, updated_at)
+                        VALUES (?, ?, ?, ?)
+                    ", [$planId, $ejercicio, now(), now()]);
                 }
-                DB::table('plan_ejercicio')->insert($planesData);
             }
 
             DB::commit();
@@ -377,7 +464,7 @@ class EjercicioController extends Controller
     public function destroy($ejercicio)
     {
         // Verificar que el ejercicio existe
-        $ejercicioData = DB::table('ejercicios')->where('id', $ejercicio)->first();
+        $ejercicioData = DB::selectOne("SELECT * FROM ejercicios WHERE id = ?", [$ejercicio]);
         if (!$ejercicioData) {
             abort(404, 'Ejercicio no encontrado');
         }
@@ -385,11 +472,11 @@ class EjercicioController extends Controller
         DB::beginTransaction();
         try {
             // Eliminar relaciones
-            DB::table('plan_ejercicio')->where('ejercicio_id', $ejercicio)->delete();
-            DB::table('rutina_ejercicio')->where('ejercicio_id', $ejercicio)->delete();
+            DB::delete("DELETE FROM plan_ejercicio WHERE ejercicio_id = ?", [$ejercicio]);
+            DB::delete("DELETE FROM detalle_rutinas WHERE ejercicio_id = ?", [$ejercicio]);
             
             // Eliminar ejercicio
-            DB::table('ejercicios')->where('id', $ejercicio)->delete();
+            DB::delete("DELETE FROM ejercicios WHERE id = ?", [$ejercicio]);
 
             DB::commit();
             return redirect()->route('ejercicios.index')->with('success', 'Ejercicio eliminado exitosamente.');
@@ -399,4 +486,3 @@ class EjercicioController extends Controller
         }
     }
 }
-

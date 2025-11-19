@@ -23,11 +23,13 @@ class TipoRutinaController extends Controller
             ]);
 
             // Verificar si ya existe un tipo con ese nombre
-            $existe = DB::table('tipo_rutinas')
-                ->where('nombre', $validated['nombre'])
-                ->exists();
+            $existe = DB::selectOne("
+                SELECT COUNT(*) as total 
+                FROM tipo_rutinas 
+                WHERE nombre = ?
+            ", [$validated['nombre']]);
 
-            if ($existe) {
+            if ($existe->total > 0) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Ya existe un tipo de rutina con ese nombre.',
@@ -35,14 +37,19 @@ class TipoRutinaController extends Controller
             }
 
             // Insertar nuevo tipo de rutina
-            $id = DB::table('tipo_rutinas')->insertGetId([
-                'nombre' => $validated['nombre'],
-                'descripcion' => $validated['descripcion'] ?? null,
-                'color' => $validated['color'] ?? '#3B82F6',
-                'activo' => true,
-                'created_at' => now(),
-                'updated_at' => now(),
+            DB::insert("
+                INSERT INTO tipo_rutinas (nombre, descripcion, color, activo, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ", [
+                $validated['nombre'],
+                $validated['descripcion'] ?? null,
+                $validated['color'] ?? '#3B82F6',
+                1,
+                now(),
+                now()
             ]);
+
+            $id = DB::getPdo()->lastInsertId();
 
             return response()->json([
                 'success' => true,
@@ -68,10 +75,7 @@ class TipoRutinaController extends Controller
      */
     public function index()
     {
-        $tipos = DB::table('tipo_rutinas')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
+        $tipos = DB::select("SELECT * FROM tipo_rutinas WHERE activo = 1 ORDER BY nombre");
 
         return response()->json($tipos);
     }
@@ -83,9 +87,7 @@ class TipoRutinaController extends Controller
     {
         try {
             // Obtener el tipo de rutina
-            $tipoRutinaData = DB::table('tipo_rutinas')
-                ->where('id', $tipoRutina)
-                ->first();
+            $tipoRutinaData = DB::selectOne("SELECT * FROM tipo_rutinas WHERE id = ?", [$tipoRutina]);
 
             if (!$tipoRutinaData) {
                 return response()->json([
@@ -101,12 +103,13 @@ class TipoRutinaController extends Controller
             ]);
 
             // Verificar si el nombre ya existe en otro registro
-            $existe = DB::table('tipo_rutinas')
-                ->where('nombre', $validated['nombre'])
-                ->where('id', '!=', $tipoRutina)
-                ->exists();
+            $existe = DB::selectOne("
+                SELECT COUNT(*) as total 
+                FROM tipo_rutinas 
+                WHERE nombre = ? AND id != ?
+            ", [$validated['nombre'], $tipoRutina]);
 
-            if ($existe) {
+            if ($existe->total > 0) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Ya existe un tipo de rutina con ese nombre.',
@@ -114,14 +117,17 @@ class TipoRutinaController extends Controller
             }
 
             // Actualizar tipo de rutina
-            DB::table('tipo_rutinas')
-                ->where('id', $tipoRutina)
-                ->update([
-                    'nombre' => $validated['nombre'],
-                    'descripcion' => $validated['descripcion'] ?? null,
-                    'color' => $validated['color'] ?? $tipoRutinaData->color,
-                    'updated_at' => now(),
-                ]);
+            DB::update("
+                UPDATE tipo_rutinas SET 
+                    nombre = ?, descripcion = ?, color = ?, updated_at = ?
+                WHERE id = ?
+            ", [
+                $validated['nombre'],
+                $validated['descripcion'] ?? null,
+                $validated['color'] ?? $tipoRutinaData->color,
+                now(),
+                $tipoRutina
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -147,9 +153,7 @@ class TipoRutinaController extends Controller
     public function destroy($tipoRutina)
     {
         // Verificar si existe el tipo de rutina
-        $tipoRutinaData = DB::table('tipo_rutinas')
-            ->where('id', $tipoRutina)
-            ->first();
+        $tipoRutinaData = DB::selectOne("SELECT * FROM tipo_rutinas WHERE id = ?", [$tipoRutina]);
 
         if (!$tipoRutinaData) {
             return response()->json([
@@ -159,9 +163,11 @@ class TipoRutinaController extends Controller
         }
 
         // Verificar si hay rutinas asociadas
-        $rutinasCount = DB::table('rutinas')
-            ->where('tipo_rutina_id', $tipoRutina)
-            ->count();
+        $rutinasCount = DB::selectOne("
+            SELECT COUNT(*) as total 
+            FROM rutinas 
+            WHERE tipo_rutina_id = ?
+        ", [$tipoRutina])->total ?? 0;
 
         if ($rutinasCount > 0) {
             return response()->json([
@@ -171,9 +177,7 @@ class TipoRutinaController extends Controller
         }
 
         // Eliminar tipo de rutina
-        DB::table('tipo_rutinas')
-            ->where('id', $tipoRutina)
-            ->delete();
+        DB::delete("DELETE FROM tipo_rutinas WHERE id = ?", [$tipoRutina]);
 
         return response()->json([
             'success' => true,
@@ -181,4 +185,3 @@ class TipoRutinaController extends Controller
         ]);
     }
 }
-

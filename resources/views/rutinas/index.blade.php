@@ -177,9 +177,9 @@
                     @endif
                 </div>
 
-                <!-- Barra de Progreso (solo para usuarios no administradores) -->
+                <!-- Barra de Progreso -->
                 @auth
-                    @if(!Auth::user()->isAdministrador() && isset($rutina->progreso))
+                    @if(isset($rutina->progreso) && $rutina->progreso > 0)
                         <div class="mb-4">
                             <div class="flex items-center justify-between mb-1">
                                 <span class="text-xs text-gray-600">Progreso</span>
@@ -194,12 +194,40 @@
 
                 <!-- Botones -->
                 <div class="flex space-x-2">
-                    <button class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center space-x-2">
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
-                        </svg>
-                        <span>Iniciar</span>
-                    </button>
+                    @auth
+                        @php
+                            $progresoRutina = $rutina->progresoData ?? null;
+                            $estadoRutina = $progresoRutina->estado ?? 'pendiente';
+                            $estaCompletada = $progresoRutina && $progresoRutina->estado === 'completada';
+                            $estaEnProgreso = $progresoRutina && $progresoRutina->estado === 'en_progreso';
+                        @endphp
+                        
+                        @if($estaCompletada)
+                            <div class="flex-1 px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium flex items-center justify-center space-x-2 cursor-not-allowed">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                </svg>
+                                <span>Completada</span>
+                            </div>
+                        @elseif($estaEnProgreso)
+                            <a href="{{ route('rutinas.execute', $rutina->id) }}" class="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition font-medium flex items-center justify-center space-x-2">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                                </svg>
+                                <span>Continuar</span>
+                            </a>
+                        @else
+                            <form action="{{ route('rutinas.start', $rutina->id) }}" method="POST" class="flex-1">
+                                @csrf
+                                <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center space-x-2">
+                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                                    </svg>
+                                    <span>Iniciar</span>
+                                </button>
+                            </form>
+                        @endif
+                    @endauth
                     <a href="{{ route('rutinas.show', $rutina->id) }}" class="flex-1 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium text-center">
                         Ver Detalle
                     </a>

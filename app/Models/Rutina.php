@@ -9,98 +9,52 @@ class Rutina extends Model
     protected $table = 'rutinas';
     
     protected $fillable = [
+        'user_id',
         'nombre',
         'descripcion',
-        'tipo_rutina_id',
+        'objetivo',
         'nivel',
-        'tiempo_estimado_minutos',
-        'calorias_estimadas',
-        'imagen_url',
-        'activo',
+        'estado',
+        'fecha_inicio',
+        'fecha_fin',
+        'fecha_publicacion',
     ];
 
     protected $casts = [
-        'tiempo_estimado_minutos' => 'integer',
-        'calorias_estimadas' => 'integer',
-        'activo' => 'boolean',
+        'fecha_inicio' => 'date',
+        'fecha_fin' => 'date',
+        'fecha_publicacion' => 'date',
     ];
 
     /**
-     * Relación con tipo de rutina
+     * Relación con el usuario (entrenador) que creó la rutina
      */
-    public function tipoRutina()
+    public function user()
     {
-        return $this->belongsTo(TipoRutina::class, 'tipo_rutina_id');
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     /**
-     * Relación con ejercicios
+     * Relación con detalles de rutina (ejercicios con sus configuraciones)
+     */
+    public function detalles()
+    {
+        return $this->hasMany(DetalleRutina::class, 'rutina_id');
+    }
+
+    /**
+     * Relación con ejercicios a través de detalles
      */
     public function ejercicios()
     {
-        return $this->belongsToMany(Ejercicio::class, 'rutina_ejercicio', 'rutina_id', 'ejercicio_id')
-                    ->withPivot('orden', 'series', 'repeticiones', 'peso', 'descanso_segundos', 'notas')
-                    ->orderBy('rutina_ejercicio.orden')
+        return $this->belongsToMany(Ejercicio::class, 'detalle_rutinas', 'rutina_id', 'ejercicio_id')
+                    ->using(DetalleRutina::class)
+                    ->withPivot('series', 'repeticiones', 'peso', 'tiempo', 'tiempo_descanso')
                     ->withTimestamps();
     }
 
     /**
-     * Relación con planes
-     */
-    public function planes()
-    {
-        return $this->belongsToMany(Plan::class, 'rutina_plan', 'rutina_id', 'plan_id')
-                    ->withTimestamps();
-    }
-
-    /**
-     * Relación con progreso de usuarios
-     */
-    public function progresoUsuarios()
-    {
-        return $this->hasMany(RutinaUsuarioProgreso::class, 'rutina_id');
-    }
-
-    /**
-     * Obtiene el progreso de un usuario específico
-     */
-    public function progresoUsuario($userId)
-    {
-        return $this->progresoUsuarios()->where('user_id', $userId)->first();
-    }
-
-    /**
-     * Calcula y actualiza el tiempo estimado y calorías basado en los ejercicios
-     */
-    public function calcularMetricas()
-    {
-        // Recargar la relación para asegurar que los pivots estén cargados
-        $this->load('ejercicios');
-        $ejercicios = $this->ejercicios;
-        
-        $tiempoTotal = $ejercicios->sum(function($ejercicio) {
-            return $ejercicio->duracion_minutos ?? 0;
-        });
-        $caloriasTotal = $ejercicios->sum(function($ejercicio) {
-            return $ejercicio->calorias_estimadas ?? 0;
-        });
-        
-        // Sumar tiempo de descanso (si hay series y descanso)
-        $tiempoDescanso = $ejercicios->sum(function($ejercicio) {
-            $series = $ejercicio->pivot->series ?? 1;
-            $descanso = $ejercicio->pivot->descanso_segundos ?? 0;
-            return (($series - 1) * $descanso) / 60; // Convertir segundos a minutos
-        });
-        
-        $this->tiempo_estimado_minutos = (int) ($tiempoTotal + $tiempoDescanso);
-        $this->calorias_estimadas = (int) $caloriasTotal;
-        $this->save();
-        
-        return $this;
-    }
-
-    /**
-     * Obtiene el color del badge según la dificultad
+     * Obtiene el color del badge según el nivel
      */
     public function getColorNivelAttribute()
     {
@@ -108,6 +62,18 @@ class Rutina extends Model
             'Principiante' => 'bg-green-100 text-green-700',
             'Intermedio' => 'bg-yellow-100 text-yellow-700',
             'Avanzado' => 'bg-pink-100 text-pink-700',
+            default => 'bg-gray-100 text-gray-700',
+        };
+    }
+
+    /**
+     * Obtiene el color del badge según el estado
+     */
+    public function getColorEstadoAttribute()
+    {
+        return match($this->estado) {
+            'Borrador' => 'bg-gray-100 text-gray-700',
+            'Publicada' => 'bg-green-100 text-green-700',
             default => 'bg-gray-100 text-gray-700',
         };
     }

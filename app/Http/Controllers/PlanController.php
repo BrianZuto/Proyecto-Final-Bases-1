@@ -13,7 +13,7 @@ class PlanController extends Controller
      */
     public function index()
     {
-        $planes = Plan::orderBy('created_at', 'desc')->get();
+        $planes = DB::select("SELECT * FROM planes ORDER BY created_at DESC");
         
         return view('planes.index', compact('planes'));
     }
@@ -39,12 +39,17 @@ class PlanController extends Controller
             'activo' => 'nullable|boolean',
         ]);
 
-        Plan::create([
-            'nombre' => $request->nombre,
-            'descripcion' => $request->descripcion,
-            'precio' => $request->precio,
-            'duracion_dias' => $request->duracion_dias,
-            'activo' => $request->has('activo') ? true : false,
+        DB::insert("
+            INSERT INTO planes (nombre, descripcion, precio, duracion, activo, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ", [
+            $request->nombre,
+            $request->descripcion,
+            $request->precio,
+            $request->duracion_dias . ' días',
+            $request->has('activo') ? 1 : 0,
+            now(),
+            now()
         ]);
 
         return redirect()->route('planes.index')->with('success', 'Plan creado exitosamente.');
@@ -55,7 +60,11 @@ class PlanController extends Controller
      */
     public function edit($id)
     {
-        $plan = Plan::findOrFail($id);
+        $plan = DB::selectOne("SELECT * FROM planes WHERE id = ?", [$id]);
+        
+        if (!$plan) {
+            abort(404, 'Plan no encontrado');
+        }
         
         return view('planes.edit', compact('plan'));
     }
@@ -73,15 +82,24 @@ class PlanController extends Controller
             'activo' => 'nullable|boolean',
         ]);
 
-        $plan = Plan::findOrFail($id);
+        $plan = DB::selectOne("SELECT * FROM planes WHERE id = ?", [$id]);
+        if (!$plan) {
+            abort(404, 'Plan no encontrado');
+        }
         
-        DB::table('planes')->where('id', $plan->id)->update([
-            'nombre' => $request->nombre,
-            'descripcion' => $request->descripcion,
-            'precio' => $request->precio,
-            'duracion_dias' => $request->duracion_dias,
-            'activo' => $request->has('activo') ? true : false,
-            'updated_at' => now(),
+        DB::update("
+            UPDATE planes SET 
+                nombre = ?, descripcion = ?, precio = ?, duracion = ?, 
+                activo = ?, updated_at = ?
+            WHERE id = ?
+        ", [
+            $request->nombre,
+            $request->descripcion,
+            $request->precio,
+            $request->duracion_dias . ' días',
+            $request->has('activo') ? 1 : 0,
+            now(),
+            $id
         ]);
 
         return redirect()->route('planes.index')->with('success', 'Plan actualizado exitosamente.');
@@ -92,19 +110,23 @@ class PlanController extends Controller
      */
     public function destroy($id)
     {
-        $plan = Plan::findOrFail($id);
+        $plan = DB::selectOne("SELECT * FROM planes WHERE id = ?", [$id]);
+        if (!$plan) {
+            abort(404, 'Plan no encontrado');
+        }
         
         // Verificar si hay usuarios con este plan activo
-        $usuariosConPlan = DB::table('plan_usuario')
-            ->where('plan_id', $plan->id)
-            ->where('activo', true)
-            ->count();
+        $usuariosConPlan = DB::selectOne("
+            SELECT COUNT(*) as total 
+            FROM plan_usuario 
+            WHERE plan_id = ? AND activo = 1
+        ", [$id])->total ?? 0;
         
         if ($usuariosConPlan > 0) {
             return redirect()->route('planes.index')->with('error', 'No se puede eliminar el plan porque hay usuarios activos con este plan.');
         }
         
-        $plan->delete();
+        DB::delete("DELETE FROM planes WHERE id = ?", [$id]);
 
         return redirect()->route('planes.index')->with('success', 'Plan eliminado exitosamente.');
     }

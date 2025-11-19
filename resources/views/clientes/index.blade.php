@@ -31,8 +31,8 @@
             <!-- Filtro por Nombre -->
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">Buscar por Nombre</label>
-                <input type="text" 
-                       name="nombre" 
+                <input type="text"
+                       name="nombre"
                        value="{{ request('nombre') }}"
                        placeholder="Nombre, apellido o usuario..."
                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
@@ -104,34 +104,91 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $cliente->email }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $cliente->nombre_usuario ?? '-' }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            @if($cliente->rol === 'Administrador')
-                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">{{ $cliente->rol }}</span>
-                            @elseif($cliente->rol === 'Coach')
-                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">{{ $cliente->rol }}</span>
+                            @php
+                                $rolNombre = $cliente->rol_nombre ?? ($cliente->rol->nombre ?? ($cliente->rol ?? 'Deportista'));
+                            @endphp
+                            @if($rolNombre === 'Administrador')
+                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">Administrador</span>
+                            @elseif($rolNombre === 'Entrenador' || $rolNombre === 'Coach')
+                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">Entrenador</span>
                             @else
-                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">{{ $cliente->rol ?? 'Deportista' }}</span>
+                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">Deportista</span>
                             @endif
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            @if($cliente->rol === 'Deportista' && $cliente->plan_activo)
-                                <div class="flex flex-col">
-                                    <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 mb-1">
-                                        {{ $cliente->plan_activo->nombre }}
-                                    </span>
-                                    <span class="text-xs text-gray-500">
-                                        Vence: {{ \Carbon\Carbon::parse($cliente->plan_activo->pivot->fecha_fin)->format('d/m/Y') }}
-                                    </span>
-                                </div>
-                            @elseif($cliente->rol === 'Deportista')
-                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">Sin plan</span>
+                            @php
+                                $rolNombre = $cliente->rol_nombre ?? ($cliente->rol->nombre ?? ($cliente->rol ?? 'Deportista'));
+                            @endphp
+                            @if($rolNombre === 'Deportista')
+                                @if($cliente->plan_activo)
+                                    <div class="flex flex-col space-y-2">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm">
+                                                {{ $cliente->plan_activo->nombre }}
+                                            </span>
+                                        </div>
+                                        <span class="text-xs text-gray-500 font-medium">
+                                            📅 Vence: {{ \Carbon\Carbon::parse($cliente->plan_activo->pivot->fecha_fin)->format('d/m/Y') }}
+                                        </span>
+                                        @auth
+                                        @if(Auth::user()->isAdministrador())
+                                        <form action="{{ route('clientes.assign-plan', $cliente->id) }}" method="POST" class="mt-1">
+                                            @csrf
+                                            <div class="relative">
+                                                <select name="plan_id" onchange="this.form.submit()" class="appearance-none w-full text-xs bg-white border-2 border-blue-300 rounded-lg px-3 py-2 pr-8 font-medium text-gray-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 shadow-sm hover:shadow cursor-pointer">
+                                                    <option value="">🔄 Cambiar plan...</option>
+                                                    @foreach($planes as $plan)
+                                                        <option value="{{ $plan->id }}" {{ $cliente->plan_activo && $cliente->plan_activo->id == $plan->id ? 'selected' : '' }}>
+                                                            {{ $plan->nombre }}
+                                                        </option>
+                                                    @endforeach
+                                                    <option value="0" class="text-red-600">❌ Quitar plan</option>
+                                                </select>
+                                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                                    <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                                        <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </form>
+                                        @endif
+                                        @endauth
+                                    </div>
+                                @else
+                                    <div class="flex flex-col space-y-2">
+                                        <span class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-200 text-gray-700 shadow-sm">
+                                            Sin plan
+                                        </span>
+                                        @auth
+                                        @if(Auth::user()->isAdministrador())
+                                        <form action="{{ route('clientes.assign-plan', $cliente->id) }}" method="POST" class="mt-1">
+                                            @csrf
+                                            <div class="relative">
+                                                <select name="plan_id" onchange="this.form.submit()" class="appearance-none w-full text-xs bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-300 rounded-lg px-3 py-2 pr-8 font-medium text-gray-700 hover:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 shadow-sm hover:shadow cursor-pointer">
+                                                    <option value="">➕ Asignar plan...</option>
+                                                    @foreach($planes as $plan)
+                                                        <option value="{{ $plan->id }}">{{ $plan->nombre }}</option>
+                                                    @endforeach
+                                                </select>
+                                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                                    <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                                        <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </form>
+                                        @endif
+                                        @endauth
+                                    </div>
+                                @endif
                             @else
                                 <span class="text-xs text-gray-400">-</span>
                             @endif
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $cliente->telefonos ?? '-' }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                            <a href="{{ route('clientes.edit', $cliente) }}" class="text-blue-600 hover:text-blue-900">Editar</a>
-                            <form action="{{ route('clientes.destroy', $cliente) }}" method="POST" class="inline" onsubmit="return confirm('¿Estás seguro de eliminar este cliente?');">
+                            <a href="{{ route('clientes.edit', $cliente->id) }}" class="text-blue-600 hover:text-blue-900">Editar</a>
+                            <form action="{{ route('clientes.destroy', $cliente->id) }}" method="POST" class="inline" onsubmit="return confirm('¿Estás seguro de eliminar este cliente?');">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="text-red-600 hover:text-red-900">Eliminar</button>
@@ -145,7 +202,7 @@
                 @endforelse
             </tbody>
         </table>
-        
+
         <!-- Paginación -->
         <div class="px-6 py-4 border-t border-gray-200">
             {{ $clientes->links() }}

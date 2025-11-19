@@ -15,18 +15,20 @@
                         Es hora de superar tus límites y alcanzar nuevas metas. Tu próximo entrenamiento te espera.
                     </p>
                     <div class="flex space-x-4">
-                        <button class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition">
-                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
-                            </svg>
-                            <span>▷ Comenzar Entrenamiento</span>
-                        </button>
-                        <button class="bg-blue-500 hover:bg-blue-600 px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition">
+                        @if($proximos_entrenamientos->count() > 0 && isset($proximos_entrenamientos->first()['rutina_id']))
+                            <a href="{{ route('rutinas.execute', $proximos_entrenamientos->first()['rutina_id']) }}" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                                </svg>
+                                <span>▷ Comenzar Entrenamiento</span>
+                            </a>
+                        @endif
+                        <a href="{{ route('rutinas.index') }}" class="bg-blue-500 hover:bg-blue-600 px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
-                            <span>+ Nueva Rutina</span>
-                        </button>
+                            <span>Ver Rutinas</span>
+                        </a>
                     </div>
                 </div>
                 @if($planActivo)
@@ -74,7 +76,13 @@
                 <div>
                     <h3 class="text-sm text-gray-600 mb-1">Calorías Quemadas</h3>
                     <div class="text-3xl font-bold text-gray-800">{{ number_format($stats['calorias']) }}</div>
-                    <p class="text-sm text-green-600 mt-1">+12% vs semana pasada</p>
+                    @if($stats['porcentaje_calorias'] > 0)
+                        <p class="text-sm text-green-600 mt-1">+{{ number_format($stats['porcentaje_calorias'], 1) }}% vs semana pasada</p>
+                    @elseif($stats['porcentaje_calorias'] < 0)
+                        <p class="text-sm text-red-600 mt-1">{{ number_format($stats['porcentaje_calorias'], 1) }}% vs semana pasada</p>
+                    @else
+                        <p class="text-sm text-gray-500 mt-1">Sin datos de semana pasada</p>
+                    @endif
                 </div>
                 <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                     <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
@@ -156,7 +164,7 @@
             </div>
             <div class="space-y-4">
                 @forelse($proximos_entrenamientos as $entrenamiento)
-                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition cursor-pointer">
+                    <a href="{{ isset($entrenamiento['rutina_id']) ? route('rutinas.show', $entrenamiento['rutina_id']) : route('rutinas.index') }}" class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition cursor-pointer">
                         <div>
                             <p class="text-sm font-semibold text-gray-800">{{ $entrenamiento['fecha'] }}</p>
                             <p class="text-gray-600">{{ $entrenamiento['rutina'] }}</p>
@@ -164,7 +172,7 @@
                         <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                         </svg>
-                    </div>
+                    </a>
                 @empty
                     <p class="text-gray-500 text-center py-4">No hay entrenamientos programados</p>
                 @endforelse

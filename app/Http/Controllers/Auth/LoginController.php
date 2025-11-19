@@ -29,6 +29,12 @@ class LoginController extends Controller
 
         if (Auth::attempt($request->only('email', 'password'), $request->boolean('remember'))) {
             $request->session()->regenerate();
+            
+            // Cargar la relación rol para evitar errores
+            $user = Auth::user();
+            if ($user && !$user->relationLoaded('rol')) {
+                $user->load('rol');
+            }
 
             return redirect()->intended('/dashboard');
         }

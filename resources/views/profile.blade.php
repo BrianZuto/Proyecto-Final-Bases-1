@@ -63,12 +63,15 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                         </svg>
                         <span class="font-medium">Rol:</span>
-                        @if($user->rol === 'Administrador')
-                            <span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">{{ $user->rol }}</span>
-                        @elseif($user->rol === 'Coach')
-                            <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">{{ $user->rol }}</span>
+                        @php
+                            $rolNombre = $user->rol ? (is_object($user->rol) ? $user->rol->nombre : $user->rol) : 'Deportista';
+                        @endphp
+                        @if($rolNombre === 'Administrador')
+                            <span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">{{ $rolNombre }}</span>
+                        @elseif($rolNombre === 'Entrenador' || $rolNombre === 'Coach')
+                            <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">{{ $rolNombre === 'Coach' ? 'Coach' : 'Entrenador' }}</span>
                         @else
-                            <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">{{ $user->rol ?? 'Deportista' }}</span>
+                            <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">{{ $rolNombre }}</span>
                         @endif
                     </div>
 
@@ -157,7 +160,10 @@
                     @else
                         <span class="px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-sm font-medium">Sin Plan</span>
                     @endif
-                    @if($user->rol === 'Coach' || $user->rol === 'Administrador')
+                    @php
+                        $rolNombre = $user->rol ? (is_object($user->rol) ? $user->rol->nombre : $user->rol) : 'Deportista';
+                    @endphp
+                    @if($rolNombre === 'Entrenador' || $rolNombre === 'Coach' || $rolNombre === 'Administrador')
                         <span class="px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-sm font-medium">Coach Verificado</span>
                     @endif
                 </div>

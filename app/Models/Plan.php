@@ -10,16 +10,14 @@ class Plan extends Model
     
     protected $fillable = [
         'nombre',
-        'descripcion',
+        'categoria',
         'precio',
-        'duracion_dias',
-        'activo',
+        'duracion',
+        'caracteristica',
     ];
 
     protected $casts = [
         'precio' => 'decimal:2',
-        'duracion_dias' => 'integer',
-        'activo' => 'boolean',
     ];
 
     /**
@@ -33,21 +31,11 @@ class Plan extends Model
     }
 
     /**
-     * Relación con ejercicios asignados al plan
+     * Relación con transacciones
      */
-    public function ejercicios()
+    public function transacciones()
     {
-        return $this->belongsToMany(Ejercicio::class, 'plan_ejercicio', 'plan_id', 'ejercicio_id')
-                    ->withTimestamps();
-    }
-
-    /**
-     * Relación con rutinas asignadas al plan
-     */
-    public function rutinas()
-    {
-        return $this->belongsToMany(\App\Models\Rutina::class, 'rutina_plan', 'plan_id', 'rutina_id')
-                    ->withTimestamps();
+        return $this->hasMany(Transaccion::class, 'plan_id');
     }
 
     /**

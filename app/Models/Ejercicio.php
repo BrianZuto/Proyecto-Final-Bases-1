@@ -10,55 +10,43 @@ class Ejercicio extends Model
     
     protected $fillable = [
         'nombre',
-        'descripcion',
-        'categoria_id',
         'grupo_muscular',
-        'dificultad',
-        'duracion_minutos',
-        'calorias_estimadas',
-        'calificacion',
-        'equipo',
-        'instrucciones',
-        'imagen_url',
-        'video_url',
-        'activo',
-    ];
-
-    protected $casts = [
-        'duracion_minutos' => 'integer',
-        'calorias_estimadas' => 'integer',
-        'calificacion' => 'decimal:1',
-        'activo' => 'boolean',
+        'material_necesario',
     ];
 
     /**
-     * Relación con categoría
+     * Relación con detalles de rutinas
      */
-    public function categoria()
+    public function detallesRutinas()
     {
-        return $this->belongsTo(Categoria::class, 'categoria_id');
+        return $this->hasMany(DetalleRutina::class, 'ejercicio_id');
     }
 
     /**
-     * Relación con planes asignados
+     * Relación con rutinas a través de detalles
      */
-    public function planes()
+    public function rutinas()
     {
-        return $this->belongsToMany(Plan::class, 'plan_ejercicio', 'ejercicio_id', 'plan_id')
+        return $this->belongsToMany(Rutina::class, 'detalle_rutinas', 'ejercicio_id', 'rutina_id')
+                    ->using(DetalleRutina::class)
+                    ->withPivot('series', 'repeticiones', 'peso', 'tiempo', 'tiempo_descanso')
                     ->withTimestamps();
     }
 
     /**
-     * Obtiene el color del badge según la dificultad
+     * Relación con deportistas que pueden hacer este ejercicio
      */
-    public function getColorDificultadAttribute()
+    public function deportistas()
     {
-        return match($this->dificultad) {
-            'Principiante' => 'bg-green-100 text-green-700',
-            'Intermedio' => 'bg-yellow-100 text-yellow-700',
-            'Avanzado' => 'bg-pink-100 text-pink-700',
-            default => 'bg-gray-100 text-gray-700',
-        };
+        return $this->belongsToMany(Deportista::class, 'deportista_ejercicio', 'ejercicio_id', 'deportista_id');
+    }
+
+    /**
+     * Relación con ejercicios favoritos
+     */
+    public function favoritos()
+    {
+        return $this->hasMany(EjercicioFavorito::class, 'ejercicio_id');
     }
 }
 

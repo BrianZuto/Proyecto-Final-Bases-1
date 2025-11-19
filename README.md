@@ -202,24 +202,28 @@ Actualiza el archivo `.env` con el nombre de tu base de datos si es diferente.
 
 #### 6. Ejecutar las Migraciones SQL
 
-El proyecto utiliza un sistema de migraciones SQL personalizado. Ejecuta el siguiente comando:
+⚠️ **IMPORTANTE**: Este proyecto utiliza un sistema de migraciones SQL personalizado ubicado en `database/sql_migrations/`. **NO uses** `php artisan migrate` estándar de Laravel.
+
+Para ejecutar las migraciones SQL, usa el siguiente comando:
 
 ```bash
 php artisan migrate:sql
 ```
 
 Este comando:
-- Crea todas las tablas necesarias
-- Inserta datos iniciales (categorías y tipos de rutinas)
-- Rastrea las migraciones ejecutadas en la tabla `sql_migrations`
+- ✅ Ejecuta todas las migraciones SQL en orden numérico (001, 002, 003, etc.)
+- ✅ Crea todas las tablas necesarias
+- ✅ Inserta datos iniciales (categorías y tipos de rutinas)
+- ✅ Rastrea las migraciones ejecutadas en la tabla `sql_migrations`
+- ✅ Omite automáticamente las migraciones ya ejecutadas
 
-**Nota**: Si necesitas ejecutar las migraciones desde cero, usa:
+**Para ejecutar las migraciones desde cero** (elimina todas las tablas y las recrea):
 
 ```bash
 php artisan migrate:sql --fresh
 ```
 
-⚠️ **Advertencia**: El flag `--fresh` eliminará todas las tablas existentes antes de ejecutar las migraciones.
+⚠️ **Advertencia**: El flag `--fresh` eliminará todas las tablas existentes antes de ejecutar las migraciones. Úsalo solo si necesitas reiniciar completamente la base de datos.
 
 #### 7. Iniciar el Servidor de Desarrollo
 
@@ -281,28 +285,52 @@ El sistema cuenta con tres roles principales:
 
 ## 🗄️ Sistema de Migraciones SQL
 
-Este proyecto utiliza un sistema de migraciones SQL personalizado en lugar de las migraciones estándar de Laravel. Las migraciones se encuentran en `database/sql_migrations/` y se ejecutan con:
+Este proyecto utiliza un **sistema de migraciones SQL personalizado** en lugar de las migraciones estándar de Laravel. Las migraciones se encuentran en `database/sql_migrations/` y se ejecutan con:
 
 ```bash
 php artisan migrate:sql
 ```
 
-El comando `migrate:sql`:
-- Ejecuta las migraciones SQL en orden numérico
-- Rastrea las migraciones ejecutadas en `sql_migrations`
-- Soporta el flag `--fresh` para reiniciar desde cero
+### Características del Sistema de Migraciones SQL
+
+- ✅ **Ejecución ordenada**: Las migraciones se ejecutan en orden numérico (001, 002, 003, etc.)
+- ✅ **Seguimiento automático**: Rastrea las migraciones ejecutadas en la tabla `sql_migrations`
+- ✅ **Prevención de duplicados**: Omite automáticamente las migraciones ya ejecutadas
+- ✅ **Reinicio completo**: Soporta el flag `--fresh` para eliminar todas las tablas y reiniciar desde cero
+
+### Ubicación de las Migraciones
+
+Todas las migraciones SQL están en: `database/sql_migrations/`
+
+### Comandos Disponibles
+
+```bash
+# Ejecutar todas las migraciones SQL pendientes
+php artisan migrate:sql
+
+# Ejecutar todas las migraciones desde cero (elimina todas las tablas)
+php artisan migrate:sql --fresh
+```
+
+⚠️ **Nota importante**: No uses `php artisan migrate` estándar de Laravel, ya que este proyecto no utiliza las migraciones de Laravel.
 
 ---
 
 ## 🔧 Comandos Útiles
 
+### Migraciones SQL
+
 ```bash
-# Ejecutar migraciones SQL
+# Ejecutar migraciones SQL (comando principal para este proyecto)
 php artisan migrate:sql
 
 # Ejecutar migraciones desde cero (elimina todas las tablas)
 php artisan migrate:sql --fresh
+```
 
+### Limpieza de Caché
+
+```bash
 # Limpiar caché de configuración
 php artisan config:clear
 
@@ -312,8 +340,21 @@ php artisan route:clear
 # Limpiar caché de vistas
 php artisan view:clear
 
+# Limpiar todo el caché
+php artisan cache:clear
+```
+
+### Otros Comandos
+
+```bash
 # Ver todas las rutas
 php artisan route:list
+
+# Generar clave de aplicación
+php artisan key:generate
+
+# Iniciar servidor de desarrollo
+php artisan serve
 ```
 
 ---
