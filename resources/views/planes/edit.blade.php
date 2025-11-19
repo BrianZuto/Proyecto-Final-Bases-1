@@ -41,7 +41,7 @@
                 <!-- Duración -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Duración (días) *</label>
-                    <input type="number" name="duracion_dias" value="{{ old('duracion_dias', $plan->duracion_dias) }}" min="1" required
+                    <input type="number" name="duracion_dias" value="{{ old('duracion_dias', is_numeric($plan->duracion ?? '') ? $plan->duracion : preg_replace('/[^0-9]/', '', $plan->duracion ?? '30')) }}" min="1" required
                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                     @error('duracion_dias')
                         <p class="text-red-500 text-xs mt-1">{{ $message }}</p>

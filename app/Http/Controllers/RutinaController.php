@@ -14,13 +14,18 @@ class RutinaController extends Controller
      */
     private function obtenerPlanActivo($userId)
     {
-        $plan = DB::table('plan_usuario')
-            ->join('planes', 'plan_usuario.plan_id', '=', 'planes.id')
-            ->where('plan_usuario.user_id', $userId)
-            ->where('plan_usuario.activo', true)
-            ->where('plan_usuario.fecha_fin', '>=', now()->toDateString())
-            ->select('planes.*', 'plan_usuario.fecha_inicio', 'plan_usuario.fecha_fin', 'plan_usuario.activo')
-            ->first();
+        $plan = DB::selectOne("
+            SELECT
+                p.*,
+                pu.fecha_inicio,
+                pu.fecha_fin,
+                pu.activo
+            FROM plan_usuario pu
+            INNER JOIN planes p ON pu.plan_id = p.id
+            WHERE pu.user_id = ?
+            AND pu.activo = 1
+            AND pu.fecha_fin >= ?
+        ", [$userId, now()->toDateString()]);
 
         return $plan;
     }
@@ -31,35 +36,37 @@ class RutinaController extends Controller
     private function calcularMetricas($rutinaId)
     {
         // Calcular tiempo total (suma de duración de ejercicios + tiempo de descanso)
-        $tiempoTotal = DB::table('rutina_ejercicio')
-            ->join('ejercicios', 'rutina_ejercicio.ejercicio_id', '=', 'ejercicios.id')
-            ->where('rutina_ejercicio.rutina_id', $rutinaId)
-            ->sum(DB::raw('COALESCE(ejercicios.duracion_minutos, 0)'));
+        $tiempoTotal = DB::selectOne("
+            SELECT COALESCE(SUM(COALESCE(e.duracion_minutos, 0)), 0) as total
+            FROM detalle_rutinas dr
+            INNER JOIN ejercicios e ON dr.ejercicio_id = e.id
+            WHERE dr.rutina_id = ?
+        ", [$rutinaId])->total ?? 0;
 
         // Calcular tiempo de descanso
-        $tiempoDescanso = DB::table('rutina_ejercicio')
-            ->where('rutina_id', $rutinaId)
-            ->get()
-            ->sum(function($item) {
-                $series = $item->series ?? 1;
-                $descanso = $item->descanso_segundos ?? 0;
-                return (($series - 1) * $descanso) / 60; // Convertir segundos a minutos
-            });
+        $detalles = DB::select("SELECT series, descanso_segundos FROM detalle_rutinas WHERE rutina_id = ?", [$rutinaId]);
+        $tiempoDescanso = collect($detalles)->sum(function($item) {
+            $series = $item->series ?? 1;
+            $descanso = $item->descanso_segundos ?? 0;
+            return (($series - 1) * $descanso) / 60; // Convertir segundos a minutos
+        });
 
         // Calcular calorías totales
-        $caloriasTotal = DB::table('rutina_ejercicio')
-            ->join('ejercicios', 'rutina_ejercicio.ejercicio_id', '=', 'ejercicios.id')
-            ->where('rutina_ejercicio.rutina_id', $rutinaId)
-            ->sum(DB::raw('COALESCE(ejercicios.calorias_estimadas, 0)'));
+        $caloriasTotal = DB::selectOne("
+            SELECT COALESCE(SUM(COALESCE(e.calorias_estimadas, 0)), 0) as total
+            FROM detalle_rutinas dr
+            INNER JOIN ejercicios e ON dr.ejercicio_id = e.id
+            WHERE dr.rutina_id = ?
+        ", [$rutinaId])->total ?? 0;
 
         // Actualizar rutina
-        DB::table('rutinas')
-            ->where('id', $rutinaId)
-            ->update([
-                'tiempo_estimado_minutos' => (int) ($tiempoTotal + $tiempoDescanso),
-                'calorias_estimadas' => (int) $caloriasTotal,
-                'updated_at' => now(),
-            ]);
+        DB::update("
+            UPDATE rutinas SET
+                tiempo_estimado_minutos = ?,
+                calorias_estimadas = ?,
+                updated_at = ?
+            WHERE id = ?
+        ", [(int)($tiempoTotal + $tiempoDescanso), (int)$caloriasTotal, now(), $rutinaId]);
     }
 
     /**
@@ -89,113 +96,125 @@ class RutinaController extends Controller
             ]);
         }
 
-        // Construir query base
-        $query = DB::table('rutinas')
-            ->leftJoin('tipo_rutinas', 'rutinas.tipo_rutina_id', '=', 'tipo_rutinas.id')
-            ->where('rutinas.activo', true);
+        // Construir query base con SQL directo
+        $whereConditions = ["r.activo = 1"];
+        $params = [];
 
         // Si no es Administrador, filtrar por plan
         if (!$user->isAdministrador() && $planActivo) {
-            $rutinasPlanIds = DB::table('rutina_plan')
-                ->where('plan_id', $planActivo->id)
-                ->pluck('rutina_id')
-                ->toArray();
+            $rutinasPlanIds = DB::select("SELECT rutina_id FROM rutina_plan WHERE plan_id = ?", [$planActivo->id]);
+            $rutinasPlanIds = collect($rutinasPlanIds)->pluck('rutina_id')->toArray();
 
             if (empty($rutinasPlanIds)) {
                 $rutinasPlanIds = [0]; // Forzar resultado vacío
             }
 
-            $query->whereIn('rutinas.id', $rutinasPlanIds);
+            $placeholders = implode(',', array_fill(0, count($rutinasPlanIds), '?'));
+            $whereConditions[] = "r.id IN ({$placeholders})";
+            $params = array_merge($params, $rutinasPlanIds);
         }
 
         // Filtro por búsqueda
         if ($request->filled('buscar')) {
             $buscar = '%' . $request->buscar . '%';
-            $query->where(function($q) use ($buscar) {
-                $q->where('rutinas.nombre', 'LIKE', $buscar)
-                  ->orWhere('rutinas.descripcion', 'LIKE', $buscar);
-            });
+            $whereConditions[] = "(r.nombre LIKE ? OR r.descripcion LIKE ?)";
+            $params[] = $buscar;
+            $params[] = $buscar;
         }
 
         // Filtro por tipo de rutina
         if ($request->filled('tipo_rutina_id') && $request->tipo_rutina_id !== 'Todos') {
-            $query->where('rutinas.tipo_rutina_id', $request->tipo_rutina_id);
+            $whereConditions[] = "r.tipo_rutina_id = ?";
+            $params[] = $request->tipo_rutina_id;
         }
 
         // Filtro por nivel
         if ($request->filled('nivel') && $request->nivel !== 'Todos') {
-            $query->where('rutinas.nivel', $request->nivel);
+            $whereConditions[] = "r.nivel = ?";
+            $params[] = $request->nivel;
         }
 
-        // Seleccionar campos
-        $query->select(
-            'rutinas.*',
-            'tipo_rutinas.nombre as tipo_nombre',
-            'tipo_rutinas.color as tipo_color'
-        );
+        $whereClause = implode(' AND ', $whereConditions);
 
         // Paginación manual
         $perPage = 12;
         $currentPage = $request->get('page', 1);
         $offset = ($currentPage - 1) * $perPage;
 
-        $total = $query->count();
-        $rutinasData = $query->orderBy('rutinas.nombre')
-            ->offset($offset)
-            ->limit($perPage)
-            ->get();
+        // Contar total
+        $total = DB::selectOne("
+            SELECT COUNT(*) as total
+            FROM rutinas r
+            LEFT JOIN tipo_rutinas tr ON r.tipo_rutina_id = tr.id
+            WHERE {$whereClause}
+        ", $params)->total ?? 0;
+
+        // Obtener rutinas
+        $rutinasData = DB::select("
+            SELECT
+                r.*,
+                tr.nombre as tipo_nombre,
+                tr.color as tipo_color
+            FROM rutinas r
+            LEFT JOIN tipo_rutinas tr ON r.tipo_rutina_id = tr.id
+            WHERE {$whereClause}
+            ORDER BY r.nombre
+            LIMIT ? OFFSET ?
+        ", array_merge($params, [$perPage, $offset]));
 
         // Cargar ejercicios para cada rutina
-        $rutinasIds = $rutinasData->pluck('id')->toArray();
+        $rutinasIds = collect($rutinasData)->pluck('id')->toArray();
         $ejerciciosPorRutina = [];
 
         if (!empty($rutinasIds)) {
-            $ejercicios = DB::table('rutina_ejercicio')
-                ->join('ejercicios', 'rutina_ejercicio.ejercicio_id', '=', 'ejercicios.id')
-                ->leftJoin('categorias', 'ejercicios.categoria_id', '=', 'categorias.id')
-                ->whereIn('rutina_ejercicio.rutina_id', $rutinasIds)
-                ->select(
-                    'rutina_ejercicio.rutina_id',
-                    'ejercicios.id as ejercicio_id',
-                    'ejercicios.nombre as ejercicio_nombre',
-                    'categorias.nombre as categoria_nombre',
-                    'rutina_ejercicio.orden',
-                    'rutina_ejercicio.series',
-                    'rutina_ejercicio.repeticiones',
-                    'rutina_ejercicio.peso',
-                    'rutina_ejercicio.descanso_segundos',
-                    'rutina_ejercicio.notas'
-                )
-                ->orderBy('rutina_ejercicio.orden')
-                ->get()
-                ->groupBy('rutina_id');
+            $placeholders = implode(',', array_fill(0, count($rutinasIds), '?'));
+            $ejercicios = DB::select("
+                SELECT
+                    dr.rutina_id,
+                    e.id as ejercicio_id,
+                    e.nombre as ejercicio_nombre,
+                    c.nombre as categoria_nombre,
+                    dr.orden,
+                    dr.series,
+                    dr.repeticiones,
+                    dr.peso,
+                    dr.descanso_segundos,
+                    dr.notas
+                FROM detalle_rutinas dr
+                INNER JOIN ejercicios e ON dr.ejercicio_id = e.id
+                LEFT JOIN categorias c ON e.categoria_id = c.id
+                WHERE dr.rutina_id IN ({$placeholders})
+                ORDER BY dr.orden
+            ", $rutinasIds);
 
-            $ejerciciosPorRutina = $ejercicios->toArray();
+            $ejerciciosPorRutina = collect($ejercicios)->groupBy('rutina_id')->toArray();
         }
 
-        // Cargar progreso si no es Administrador
+        // Cargar progreso para todos los usuarios
         $progresoPorRutina = [];
-        if (!$user->isAdministrador() && !empty($rutinasIds)) {
-            $progresos = DB::table('rutina_usuario_progreso')
-                ->where('user_id', $user->id)
-                ->whereIn('rutina_id', $rutinasIds)
-                ->get()
-                ->keyBy('rutina_id');
+        if (!empty($rutinasIds)) {
+            $placeholders = implode(',', array_fill(0, count($rutinasIds), '?'));
+            $progresos = DB::select("
+                SELECT * FROM rutina_usuario_progreso
+                WHERE user_id = ? AND rutina_id IN ({$placeholders})
+            ", array_merge([$user->id], $rutinasIds));
 
             foreach ($progresos as $progreso) {
-                $progresoPorRutina[$progreso->rutina_id] = $progreso->porcentaje_completado;
+                $progresoPorRutina[$progreso->rutina_id] = $progreso;
             }
         }
 
         // Transformar datos para la vista
-        $rutinas = $rutinasData->map(function($rutina) use ($ejerciciosPorRutina, $progresoPorRutina) {
+        $rutinas = collect($rutinasData)->map(function($rutina) use ($ejerciciosPorRutina, $progresoPorRutina) {
             // Obtener ejercicios de esta rutina
             $ejercicios = isset($ejerciciosPorRutina[$rutina->id])
                 ? collect($ejerciciosPorRutina[$rutina->id])
                 : collect([]);
 
             $rutina->ejercicios = $ejercicios;
-            $rutina->progreso = $progresoPorRutina[$rutina->id] ?? 0;
+            $progresoData = $progresoPorRutina[$rutina->id] ?? null;
+            $rutina->progreso = $progresoData ? $progresoData->porcentaje_completado : 0;
+            $rutina->progresoData = $progresoData;
 
             // Crear objeto tipoRutina simulado
             if ($rutina->tipo_rutina_id) {
@@ -227,19 +246,21 @@ class RutinaController extends Controller
         );
 
         // Obtener tipos de rutinas
-        $tipoRutinasQuery = DB::table('tipo_rutinas')
-            ->where('activo', true);
-
         if (!$user->isAdministrador()) {
-            $tipoRutinasIds = $rutinasData->pluck('tipo_rutina_id')->filter()->unique()->toArray();
+            $tipoRutinasIds = collect($rutinasData)->pluck('tipo_rutina_id')->filter()->unique()->toArray();
             if (!empty($tipoRutinasIds)) {
-                $tipoRutinasQuery->whereIn('id', $tipoRutinasIds);
+                $placeholders = implode(',', array_fill(0, count($tipoRutinasIds), '?'));
+                $tipoRutinas = DB::select("
+                    SELECT * FROM tipo_rutinas
+                    WHERE activo = 1 AND id IN ({$placeholders})
+                    ORDER BY nombre
+                ", $tipoRutinasIds);
             } else {
-                $tipoRutinasQuery->whereRaw('1 = 0'); // Forzar resultado vacío
+                $tipoRutinas = [];
             }
+        } else {
+            $tipoRutinas = DB::select("SELECT * FROM tipo_rutinas WHERE activo = 1 ORDER BY nombre");
         }
-
-        $tipoRutinas = $tipoRutinasQuery->orderBy('nombre')->get();
 
         return view('rutinas.index', compact('rutinas', 'tipoRutinas', 'planActivo'));
     }
@@ -249,20 +270,9 @@ class RutinaController extends Controller
      */
     public function create()
     {
-        $tipoRutinas = DB::table('tipo_rutinas')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
-
-        $planes = DB::table('planes')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
-
-        $ejercicios = DB::table('ejercicios')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
+        $tipoRutinas = DB::select("SELECT * FROM tipo_rutinas WHERE activo = 1 ORDER BY nombre");
+        $planes = DB::select("SELECT * FROM planes WHERE activo = 1 ORDER BY nombre");
+        $ejercicios = DB::select("SELECT * FROM ejercicios WHERE activo = 1 ORDER BY nombre");
 
         return view('rutinas.create', compact('tipoRutinas', 'planes', 'ejercicios'));
     }
@@ -294,50 +304,54 @@ class RutinaController extends Controller
         DB::beginTransaction();
         try {
             // Insertar rutina
-            $rutinaId = DB::table('rutinas')->insertGetId([
-                'nombre' => $request->nombre,
-                'descripcion' => $request->descripcion,
-                'tipo_rutina_id' => $request->tipo_rutina_id,
-                'nivel' => $request->nivel,
-                'imagen_url' => $request->imagen_url,
-                'activo' => $request->has('activo') ? true : false,
-                'created_at' => now(),
-                'updated_at' => now(),
+            DB::insert("
+                INSERT INTO rutinas (nombre, descripcion, tipo_rutina_id, nivel, imagen_url, activo, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ", [
+                $request->nombre,
+                $request->descripcion,
+                $request->tipo_rutina_id,
+                $request->nivel,
+                $request->imagen_url,
+                $request->has('activo') ? 1 : 0,
+                now(),
+                now()
             ]);
 
+            $rutinaId = DB::getPdo()->lastInsertId();
+
             // Insertar ejercicios
-            $ejerciciosData = [];
             foreach ($request->ejercicios as $ejercicioData) {
-                $ejerciciosData[] = [
-                    'rutina_id' => $rutinaId,
-                    'ejercicio_id' => $ejercicioData['ejercicio_id'],
-                    'orden' => $ejercicioData['orden'],
-                    'series' => $ejercicioData['series'] ?? null,
-                    'repeticiones' => $ejercicioData['repeticiones'] ?? null,
-                    'peso' => $ejercicioData['peso'] ?? null,
-                    'descanso_segundos' => $ejercicioData['descanso_segundos'] ?? null,
-                    'notas' => $ejercicioData['notas'] ?? null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
+                DB::insert("
+                    INSERT INTO detalle_rutinas (
+                        rutina_id, ejercicio_id, orden, series, repeticiones,
+                        peso, descanso_segundos, notas, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ", [
+                    $rutinaId,
+                    $ejercicioData['ejercicio_id'],
+                    $ejercicioData['orden'],
+                    $ejercicioData['series'] ?? null,
+                    $ejercicioData['repeticiones'] ?? null,
+                    $ejercicioData['peso'] ?? null,
+                    $ejercicioData['descanso_segundos'] ?? null,
+                    $ejercicioData['notas'] ?? null,
+                    now(),
+                    now()
+                ]);
             }
-            DB::table('rutina_ejercicio')->insert($ejerciciosData);
 
             // Calcular métricas
             $this->calcularMetricas($rutinaId);
 
             // Asignar planes
             if ($request->filled('planes')) {
-                $planesData = [];
                 foreach ($request->planes as $planId) {
-                    $planesData[] = [
-                        'rutina_id' => $rutinaId,
-                        'plan_id' => $planId,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+                    DB::insert("
+                        INSERT INTO rutina_plan (rutina_id, plan_id, created_at, updated_at)
+                        VALUES (?, ?, ?, ?)
+                    ", [$rutinaId, $planId, now(), now()]);
                 }
-                DB::table('rutina_plan')->insert($planesData);
             }
 
             DB::commit();
@@ -353,41 +367,41 @@ class RutinaController extends Controller
      */
     public function show($rutina)
     {
-        $rutinaData = DB::table('rutinas')
-            ->leftJoin('tipo_rutinas', 'rutinas.tipo_rutina_id', '=', 'tipo_rutinas.id')
-            ->where('rutinas.id', $rutina)
-            ->select(
-                'rutinas.*',
-                'tipo_rutinas.nombre as tipo_nombre',
-                'tipo_rutinas.color as tipo_color',
-                'tipo_rutinas.descripcion as tipo_descripcion'
-            )
-            ->first();
+        $rutinaData = DB::selectOne("
+            SELECT
+                r.*,
+                tr.nombre as tipo_nombre,
+                tr.color as tipo_color,
+                tr.descripcion as tipo_descripcion
+            FROM rutinas r
+            LEFT JOIN tipo_rutinas tr ON r.tipo_rutina_id = tr.id
+            WHERE r.id = ?
+        ", [$rutina]);
 
         if (!$rutinaData) {
             abort(404, 'Rutina no encontrada');
         }
 
         // Cargar ejercicios
-        $ejercicios = DB::table('rutina_ejercicio')
-            ->join('ejercicios', 'rutina_ejercicio.ejercicio_id', '=', 'ejercicios.id')
-            ->leftJoin('categorias', 'ejercicios.categoria_id', '=', 'categorias.id')
-            ->where('rutina_ejercicio.rutina_id', $rutina)
-            ->select(
-                'ejercicios.*',
-                'categorias.nombre as categoria_nombre',
-                'rutina_ejercicio.orden',
-                'rutina_ejercicio.series',
-                'rutina_ejercicio.repeticiones',
-                'rutina_ejercicio.peso',
-                'rutina_ejercicio.descanso_segundos',
-                'rutina_ejercicio.notas'
-            )
-            ->orderBy('rutina_ejercicio.orden')
-            ->get();
+        $ejercicios = DB::select("
+            SELECT
+                e.*,
+                c.nombre as categoria_nombre,
+                dr.orden,
+                dr.series,
+                dr.repeticiones,
+                dr.peso,
+                dr.descanso_segundos,
+                dr.notas
+            FROM detalle_rutinas dr
+            INNER JOIN ejercicios e ON dr.ejercicio_id = e.id
+            LEFT JOIN categorias c ON e.categoria_id = c.id
+            WHERE dr.rutina_id = ?
+            ORDER BY dr.orden
+        ", [$rutina]);
 
         // Agregar pivot simulado a cada ejercicio
-        $ejercicios = $ejercicios->map(function($ejercicio) {
+        $ejercicios = collect($ejercicios)->map(function($ejercicio) {
             $ejercicio->pivot = (object) [
                 'orden' => $ejercicio->orden,
                 'series' => $ejercicio->series,
@@ -422,14 +436,12 @@ class RutinaController extends Controller
 
         /** @var User $user */
         $user = Auth::user();
-        $progreso = null;
 
-        if (!$user->isAdministrador()) {
-            $progreso = DB::table('rutina_usuario_progreso')
-                ->where('user_id', $user->id)
-                ->where('rutina_id', $rutina)
-                ->first();
-        }
+        // Cargar progreso para todos los usuarios
+        $progreso = DB::selectOne("
+            SELECT * FROM rutina_usuario_progreso
+            WHERE user_id = ? AND rutina_id = ?
+        ", [$user->id, $rutina]);
 
         return view('rutinas.show', ['rutina' => $rutinaData, 'progreso' => $progreso]);
     }
@@ -439,48 +451,31 @@ class RutinaController extends Controller
      */
     public function edit($rutina)
     {
-        $rutinaData = DB::table('rutinas')
-            ->where('id', $rutina)
-            ->first();
+        $rutinaData = DB::selectOne("SELECT * FROM rutinas WHERE id = ?", [$rutina]);
 
         if (!$rutinaData) {
             abort(404, 'Rutina no encontrada');
         }
 
-        $tipoRutinas = DB::table('tipo_rutinas')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
+        $tipoRutinas = DB::select("SELECT * FROM tipo_rutinas WHERE activo = 1 ORDER BY nombre");
+        $planes = DB::select("SELECT * FROM planes WHERE activo = 1 ORDER BY nombre");
 
-        $planes = DB::table('planes')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
+        $planesAsignadosData = DB::select("SELECT plan_id FROM rutina_plan WHERE rutina_id = ?", [$rutina]);
+        $planesAsignados = collect($planesAsignadosData)->pluck('plan_id')->toArray();
 
-        $planesAsignados = DB::table('rutina_plan')
-            ->where('rutina_id', $rutina)
-            ->pluck('plan_id')
-            ->toArray();
+        $ejercicios = DB::select("SELECT * FROM ejercicios WHERE activo = 1 ORDER BY nombre");
 
-        $ejercicios = DB::table('ejercicios')
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
-
-        $ejerciciosAsignados = DB::table('rutina_ejercicio')
-            ->where('rutina_id', $rutina)
-            ->get()
-            ->mapWithKeys(function($item) {
-                return [$item->ejercicio_id => [
-                    'orden' => $item->orden,
-                    'series' => $item->series,
-                    'repeticiones' => $item->repeticiones,
-                    'peso' => $item->peso,
-                    'descanso_segundos' => $item->descanso_segundos,
-                    'notas' => $item->notas,
-                ]];
-            })
-            ->toArray();
+        $ejerciciosAsignadosData = DB::select("SELECT * FROM detalle_rutinas WHERE rutina_id = ?", [$rutina]);
+        $ejerciciosAsignados = collect($ejerciciosAsignadosData)->mapWithKeys(function($item) {
+            return [$item->ejercicio_id => [
+                'orden' => $item->orden,
+                'series' => $item->series,
+                'repeticiones' => $item->repeticiones,
+                'peso' => $item->peso,
+                'descanso_segundos' => $item->descanso_segundos,
+                'notas' => $item->notas,
+            ]];
+        })->toArray();
 
         return view('rutinas.edit', [
             'rutina' => $rutinaData,
@@ -517,7 +512,7 @@ class RutinaController extends Controller
         ]);
 
         // Verificar que la rutina existe
-        $rutinaData = DB::table('rutinas')->where('id', $rutina)->first();
+        $rutinaData = DB::selectOne("SELECT * FROM rutinas WHERE id = ?", [$rutina]);
         if (!$rutinaData) {
             abort(404, 'Rutina no encontrada');
         }
@@ -525,55 +520,58 @@ class RutinaController extends Controller
         DB::beginTransaction();
         try {
             // Actualizar rutina
-            DB::table('rutinas')
-                ->where('id', $rutina)
-                ->update([
-                    'nombre' => $request->nombre,
-                    'descripcion' => $request->descripcion,
-                    'tipo_rutina_id' => $request->tipo_rutina_id,
-                    'nivel' => $request->nivel,
-                    'imagen_url' => $request->imagen_url,
-                    'activo' => $request->has('activo') ? true : false,
-                    'updated_at' => now(),
-                ]);
+            DB::update("
+                UPDATE rutinas SET
+                    nombre = ?, descripcion = ?, tipo_rutina_id = ?, nivel = ?,
+                    imagen_url = ?, activo = ?, updated_at = ?
+                WHERE id = ?
+            ", [
+                $request->nombre,
+                $request->descripcion,
+                $request->tipo_rutina_id,
+                $request->nivel,
+                $request->imagen_url,
+                $request->has('activo') ? 1 : 0,
+                now(),
+                $rutina
+            ]);
 
             // Eliminar ejercicios actuales
-            DB::table('rutina_ejercicio')->where('rutina_id', $rutina)->delete();
+            DB::delete("DELETE FROM detalle_rutinas WHERE rutina_id = ?", [$rutina]);
 
             // Insertar nuevos ejercicios
-            $ejerciciosData = [];
             foreach ($request->ejercicios as $ejercicioData) {
-                $ejerciciosData[] = [
-                    'rutina_id' => $rutina,
-                    'ejercicio_id' => $ejercicioData['ejercicio_id'],
-                    'orden' => $ejercicioData['orden'],
-                    'series' => $ejercicioData['series'] ?? null,
-                    'repeticiones' => $ejercicioData['repeticiones'] ?? null,
-                    'peso' => $ejercicioData['peso'] ?? null,
-                    'descanso_segundos' => $ejercicioData['descanso_segundos'] ?? null,
-                    'notas' => $ejercicioData['notas'] ?? null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
+                DB::insert("
+                    INSERT INTO detalle_rutinas (
+                        rutina_id, ejercicio_id, orden, series, repeticiones,
+                        peso, descanso_segundos, notas, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ", [
+                    $rutina,
+                    $ejercicioData['ejercicio_id'],
+                    $ejercicioData['orden'],
+                    $ejercicioData['series'] ?? null,
+                    $ejercicioData['repeticiones'] ?? null,
+                    $ejercicioData['peso'] ?? null,
+                    $ejercicioData['descanso_segundos'] ?? null,
+                    $ejercicioData['notas'] ?? null,
+                    now(),
+                    now()
+                ]);
             }
-            DB::table('rutina_ejercicio')->insert($ejerciciosData);
 
             // Recalcular métricas
             $this->calcularMetricas($rutina);
 
             // Actualizar planes
-            DB::table('rutina_plan')->where('rutina_id', $rutina)->delete();
+            DB::delete("DELETE FROM rutina_plan WHERE rutina_id = ?", [$rutina]);
             if ($request->filled('planes')) {
-                $planesData = [];
                 foreach ($request->planes as $planId) {
-                    $planesData[] = [
-                        'rutina_id' => $rutina,
-                        'plan_id' => $planId,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+                    DB::insert("
+                        INSERT INTO rutina_plan (rutina_id, plan_id, created_at, updated_at)
+                        VALUES (?, ?, ?, ?)
+                    ", [$rutina, $planId, now(), now()]);
                 }
-                DB::table('rutina_plan')->insert($planesData);
             }
 
             DB::commit();
@@ -590,15 +588,17 @@ class RutinaController extends Controller
     public function destroy($rutina)
     {
         // Verificar que la rutina existe
-        $rutinaData = DB::table('rutinas')->where('id', $rutina)->first();
+        $rutinaData = DB::selectOne("SELECT * FROM rutinas WHERE id = ?", [$rutina]);
         if (!$rutinaData) {
             abort(404, 'Rutina no encontrada');
         }
 
         // Verificar si hay usuarios con progreso
-        $progresoCount = DB::table('rutina_usuario_progreso')
-            ->where('rutina_id', $rutina)
-            ->count();
+        $progresoCount = DB::selectOne("
+            SELECT COUNT(*) as total
+            FROM rutina_usuario_progreso
+            WHERE rutina_id = ?
+        ", [$rutina])->total ?? 0;
 
         if ($progresoCount > 0) {
             return redirect()->route('rutinas.index')->with('error', 'No se puede eliminar la rutina porque hay usuarios con progreso en ella.');
@@ -607,11 +607,11 @@ class RutinaController extends Controller
         DB::beginTransaction();
         try {
             // Eliminar relaciones
-            DB::table('rutina_ejercicio')->where('rutina_id', $rutina)->delete();
-            DB::table('rutina_plan')->where('rutina_id', $rutina)->delete();
+            DB::delete("DELETE FROM detalle_rutinas WHERE rutina_id = ?", [$rutina]);
+            DB::delete("DELETE FROM rutina_plan WHERE rutina_id = ?", [$rutina]);
 
             // Eliminar rutina
-            DB::table('rutinas')->where('id', $rutina)->delete();
+            DB::delete("DELETE FROM rutinas WHERE id = ?", [$rutina]);
 
             DB::commit();
             return redirect()->route('rutinas.index')->with('success', 'Rutina eliminada exitosamente.');
@@ -619,5 +619,346 @@ class RutinaController extends Controller
             DB::rollBack();
             return redirect()->route('rutinas.index')->with('error', 'Error al eliminar la rutina: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Inicia una rutina para el usuario actual
+     */
+    public function start($rutina)
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        // Verificar que la rutina existe
+        $rutinaData = DB::selectOne("SELECT * FROM rutinas WHERE id = ?", [$rutina]);
+        if (!$rutinaData) {
+            abort(404, 'Rutina no encontrada');
+        }
+
+        // Crear o actualizar el progreso
+        $progreso = DB::selectOne("
+            SELECT * FROM rutina_usuario_progreso
+            WHERE user_id = ? AND rutina_id = ?
+        ", [$user->id, $rutina]);
+
+        if ($progreso) {
+            // Si ya existe y está completada, no permitir reiniciar
+            if ($progreso->estado === 'completada') {
+                return redirect()->route('rutinas.show', $rutina)
+                    ->with('error', 'Esta rutina ya está completada.');
+            }
+            // Si ya existe, actualizar fecha de última sesión y estado
+            DB::update("
+                UPDATE rutina_usuario_progreso SET
+                    estado = 'en_progreso',
+                    fecha_ultima_sesion = ?,
+                    updated_at = ?
+                WHERE id = ?
+            ", [now()->toDateString(), now(), $progreso->id]);
+        } else {
+            // Si no existe, crear nuevo registro
+            DB::insert("
+                INSERT INTO rutina_usuario_progreso (
+                    user_id, rutina_id, porcentaje_completado, estado,
+                    fecha_inicio, fecha_ultima_sesion, sesiones_completadas,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ", [
+                $user->id,
+                $rutina,
+                0.00,
+                'en_progreso',
+                now()->toDateString(),
+                now()->toDateString(),
+                0,
+                now(),
+                now()
+            ]);
+        }
+
+        return redirect()->route('rutinas.execute', $rutina)
+            ->with('success', 'Rutina iniciada. ¡Mucha suerte!');
+    }
+
+    /**
+     * Muestra la vista de ejecución de la rutina
+     */
+    public function execute($rutina)
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        // Cargar datos de la rutina
+        $rutinaData = DB::selectOne("
+            SELECT
+                r.*,
+                tr.nombre as tipo_nombre,
+                tr.color as tipo_color
+            FROM rutinas r
+            LEFT JOIN tipo_rutinas tr ON r.tipo_rutina_id = tr.id
+            WHERE r.id = ?
+        ", [$rutina]);
+
+        if (!$rutinaData) {
+            abort(404, 'Rutina no encontrada');
+        }
+
+        // Cargar ejercicios
+        $ejercicios = DB::select("
+            SELECT
+                dr.id as detalle_id,
+                e.*,
+                c.nombre as categoria_nombre,
+                dr.orden,
+                dr.series,
+                dr.repeticiones,
+                dr.peso,
+                dr.descanso_segundos,
+                dr.notas
+            FROM detalle_rutinas dr
+            INNER JOIN ejercicios e ON dr.ejercicio_id = e.id
+            LEFT JOIN categorias c ON e.categoria_id = c.id
+            WHERE dr.rutina_id = ?
+            ORDER BY dr.orden
+        ", [$rutina]);
+
+        // Cargar progreso de ejercicios completados
+        $progresos = [];
+        $deportista = DB::selectOne("SELECT * FROM deportistas WHERE user_id = ? LIMIT 1", [$user->id]);
+
+        if ($deportista) {
+            $progresosData = DB::select("
+                SELECT p.detalle_rutina_id
+                FROM progresos p
+                INNER JOIN detalle_rutinas dr ON p.detalle_rutina_id = dr.id
+                WHERE p.deportista_id = ?
+                AND dr.rutina_id = ?
+                AND p.fecha_registro = ?
+            ", [$deportista->id, $rutina, now()->toDateString()]);
+            $progresos = collect($progresosData)->pluck('detalle_rutina_id')->toArray();
+        }
+
+        // Cargar progreso general (para todos los usuarios)
+        $progreso = DB::selectOne("
+            SELECT * FROM rutina_usuario_progreso
+            WHERE user_id = ? AND rutina_id = ?
+        ", [$user->id, $rutina]);
+
+        // Determinar estado de cada ejercicio
+        $ejercicios = collect($ejercicios)->map(function($ejercicio) use ($progresos) {
+            $ejercicio->completado = in_array($ejercicio->detalle_id, $progresos);
+            $ejercicio->estado = $ejercicio->completado ? 'completado' : 'pendiente';
+            $ejercicio->pivot = (object) [
+                'orden' => $ejercicio->orden,
+                'series' => $ejercicio->series,
+                'repeticiones' => $ejercicio->repeticiones,
+                'peso' => $ejercicio->peso,
+                'descanso_segundos' => $ejercicio->descanso_segundos,
+                'notas' => $ejercicio->notas,
+            ];
+            $ejercicio->categoria = $ejercicio->categoria_nombre ? (object) ['nombre' => $ejercicio->categoria_nombre] : null;
+            return $ejercicio;
+        });
+
+        // Calcular progreso actual de la sesión
+        $ejerciciosCompletados = $ejercicios->where('completado', true)->count();
+        $totalEjercicios = $ejercicios->count();
+        $progresoSesion = $totalEjercicios > 0 ? ($ejerciciosCompletados / $totalEjercicios) * 100 : 0;
+
+        $rutinaData->ejercicios = $ejercicios;
+        $rutinaData->tipoRutina = $rutinaData->tipo_rutina_id ? (object) [
+            'id' => $rutinaData->tipo_rutina_id,
+            'nombre' => $rutinaData->tipo_nombre,
+            'color' => $rutinaData->tipo_color,
+        ] : null;
+
+        return view('rutinas.execute', [
+            'rutina' => $rutinaData,
+            'progreso' => $progreso,
+            'progresoSesion' => $progresoSesion,
+            'ejerciciosCompletados' => $ejerciciosCompletados,
+            'totalEjercicios' => $totalEjercicios,
+        ]);
+    }
+
+    /**
+     * Marca ejercicios como completados (puede ser uno o varios)
+     */
+    public function completeExercise(Request $request, $rutina)
+    {
+        $request->validate([
+            'ejercicios' => 'required|array|min:1',
+            'ejercicios.*' => 'required|exists:detalle_rutinas,id',
+        ]);
+
+        /** @var User $user */
+        $user = Auth::user();
+
+        // Obtener o crear deportista_id
+        $deportista = DB::selectOne("SELECT * FROM deportistas WHERE user_id = ? LIMIT 1", [$user->id]);
+
+        if (!$deportista) {
+            // Si no existe, crear registro en deportistas
+            DB::insert("INSERT INTO deportistas (user_id, created_at, updated_at) VALUES (?, ?, ?)", [
+                $user->id,
+                now(),
+                now()
+            ]);
+            $deportistaId = DB::getPdo()->lastInsertId();
+            $deportista = (object) ['id' => $deportistaId];
+        }
+
+        // Verificar que todos los ejercicios pertenecen a la rutina
+        $placeholders = implode(',', array_fill(0, count($request->ejercicios), '?'));
+        $detallesRutinaData = DB::select("
+            SELECT id FROM detalle_rutinas
+            WHERE id IN ({$placeholders}) AND rutina_id = ?
+        ", array_merge($request->ejercicios, [$rutina]));
+        $detallesRutina = collect($detallesRutinaData)->pluck('id')->toArray();
+
+        if (count($detallesRutina) !== count($request->ejercicios)) {
+            return response()->json(['error' => 'Algunos ejercicios no pertenecen a esta rutina.'], 404);
+        }
+
+        $completados = 0;
+        $hoy = now()->toDateString();
+
+        // Procesar cada ejercicio
+        foreach ($request->ejercicios as $detalleId) {
+            // Verificar si ya está completado hoy
+            $progresoExistente = DB::selectOne("
+                SELECT * FROM progresos
+                WHERE deportista_id = ? AND detalle_rutina_id = ? AND fecha_registro = ?
+            ", [$deportista->id, $detalleId, $hoy]);
+
+            if ($progresoExistente) {
+                // Si ya existe, actualizar
+                DB::update("
+                    UPDATE progresos SET
+                        porcentaje_completado = 100.00,
+                        updated_at = ?
+                    WHERE id = ?
+                ", [now(), $progresoExistente->id]);
+            } else {
+                // Si no existe, crear nuevo
+                DB::insert("
+                    INSERT INTO progresos (
+                        deportista_id, detalle_rutina_id, fecha_registro,
+                        porcentaje_completado, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                ", [$deportista->id, $detalleId, $hoy, 100.00, now(), now()]);
+            }
+            $completados++;
+        }
+
+        // Actualizar progreso general de la rutina
+        $this->actualizarProgresoRutina($user->id, $rutina);
+
+        return response()->json([
+            'success' => true,
+            'message' => $completados > 1 ? "{$completados} ejercicios marcados como completados" : 'Ejercicio marcado como completado',
+            'completados' => $completados,
+        ]);
+    }
+
+    /**
+     * Finaliza la rutina y actualiza el progreso
+     */
+    public function finish($rutina)
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        // Actualizar progreso general
+        $this->actualizarProgresoRutina($user->id, $rutina);
+
+        // Actualizar sesiones completadas
+        $progreso = DB::selectOne("
+            SELECT * FROM rutina_usuario_progreso
+            WHERE user_id = ? AND rutina_id = ?
+        ", [$user->id, $rutina]);
+
+        if ($progreso) {
+            DB::update("
+                UPDATE rutina_usuario_progreso SET
+                    sesiones_completadas = sesiones_completadas + 1,
+                    fecha_ultima_sesion = ?,
+                    estado = 'completada',
+                    updated_at = ?
+                WHERE id = ?
+            ", [now()->toDateString(), now(), $progreso->id]);
+        }
+
+        // Crear sesión automáticamente
+        \App\Http\Controllers\SesionController::crearDesdeRutina($user->id, $rutina);
+
+        // Verificar y asignar logros automáticamente
+        $deportista = DB::selectOne("SELECT * FROM deportistas WHERE user_id = ? LIMIT 1", [$user->id]);
+
+        if ($deportista) {
+            \App\Http\Controllers\ProgresoController::verificarYAsignarLogros($user->id, $deportista->id);
+        }
+
+        return redirect()->route('rutinas.show', $rutina)
+            ->with('success', '¡Rutina completada! ¡Excelente trabajo!');
+    }
+
+    /**
+     * Actualiza el progreso general de la rutina
+     */
+    private function actualizarProgresoRutina($userId, $rutinaId)
+    {
+        // Obtener todos los ejercicios de la rutina
+        $totalEjercicios = DB::selectOne("
+            SELECT COUNT(*) as total FROM detalle_rutinas WHERE rutina_id = ?
+        ", [$rutinaId])->total ?? 0;
+
+        if ($totalEjercicios == 0) {
+            return;
+        }
+
+        // Obtener o crear deportista_id
+        $deportista = DB::selectOne("SELECT * FROM deportistas WHERE user_id = ? LIMIT 1", [$userId]);
+
+        if (!$deportista) {
+            // Si no existe, crear registro en deportistas
+            DB::insert("INSERT INTO deportistas (user_id, created_at, updated_at) VALUES (?, ?, ?)", [
+                $userId,
+                now(),
+                now()
+            ]);
+            $deportistaId = DB::getPdo()->lastInsertId();
+            $deportista = (object) ['id' => $deportistaId];
+        }
+
+        // Contar ejercicios completados (al menos una vez)
+        $ejerciciosCompletados = DB::selectOne("
+            SELECT COUNT(DISTINCT p.detalle_rutina_id) as total
+            FROM progresos p
+            INNER JOIN detalle_rutinas dr ON p.detalle_rutina_id = dr.id
+            WHERE p.deportista_id = ?
+            AND dr.rutina_id = ?
+            AND p.porcentaje_completado >= 100
+        ", [$deportista->id, $rutinaId])->total ?? 0;
+
+        // Calcular porcentaje
+        $porcentaje = ($ejerciciosCompletados / $totalEjercicios) * 100;
+
+        // Determinar estado basado en porcentaje
+        $estado = 'en_progreso';
+        if ($porcentaje >= 100) {
+            $estado = 'completada';
+        } elseif ($porcentaje == 0) {
+            $estado = 'pendiente';
+        }
+
+        // Actualizar progreso
+        DB::update("
+            UPDATE rutina_usuario_progreso SET
+                porcentaje_completado = ?,
+                estado = ?,
+                updated_at = ?
+            WHERE user_id = ? AND rutina_id = ?
+        ", [round($porcentaje, 2), $estado, now(), $userId, $rutinaId]);
     }
 }

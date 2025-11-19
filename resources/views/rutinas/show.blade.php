@@ -3,6 +3,18 @@
 @section('title', 'Detalle de la Rutina')
 
 @section('content')
+    @if(session('success'))
+        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-6">
+            {{ session('success') }}
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6">
+            {{ session('error') }}
+        </div>
+    @endif
+
     <div class="mb-6">
         <div class="flex items-center justify-between">
             <div>
@@ -153,14 +165,50 @@
                     </div>
                 </div>
 
-                <div class="flex space-x-4 mt-6">
-                    <button class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center space-x-2">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
-                        </svg>
-                        <span>Iniciar Rutina</span>
-                    </button>
-                </div>
+                @auth
+                    <div class="flex space-x-4 mt-6">
+                        @php
+                            $estadoRutina = $progreso->estado ?? 'pendiente';
+                            $estaCompletada = isset($progreso) && $progreso->estado === 'completada';
+                            $estaEnProgreso = isset($progreso) && $progreso->estado === 'en_progreso';
+                        @endphp
+                            
+                            @if($estaCompletada)
+                                <div class="flex-1 px-6 py-3 bg-green-100 text-green-700 rounded-lg font-medium flex items-center justify-center space-x-2 cursor-not-allowed">
+                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                    </svg>
+                                    <span>Rutina Completada</span>
+                                </div>
+                            @elseif($estaEnProgreso)
+                                <a href="{{ route('rutinas.execute', $rutina->id) }}" class="flex-1 px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition font-medium flex items-center justify-center space-x-2">
+                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                                    </svg>
+                                    <span>Continuar Rutina</span>
+                                </a>
+                            @else
+                                <form action="{{ route('rutinas.start', $rutina->id) }}" method="POST" class="flex-1" id="form-iniciar-rutina">
+                                    @csrf
+                                    <button type="submit" class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center space-x-2" id="btn-iniciar-rutina">
+                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                                        </svg>
+                                        <span id="btn-text">Iniciar Rutina</span>
+                                    </button>
+                                </form>
+                                <script>
+                                    document.getElementById('form-iniciar-rutina').addEventListener('submit', function(e) {
+                                        const btn = document.getElementById('btn-iniciar-rutina');
+                                        const btnText = document.getElementById('btn-text');
+                                        btn.disabled = true;
+                                        btn.classList.add('opacity-50', 'cursor-not-allowed');
+                                        btnText.textContent = 'Iniciando...';
+                                    });
+                                </script>
+                            @endif
+                        </div>
+                @endauth
             </div>
         </div>
 

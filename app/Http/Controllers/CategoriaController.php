@@ -23,11 +23,16 @@ class CategoriaController extends Controller
                 'nombre.unique' => 'Ya existe una categoría con ese nombre.',
             ]);
 
-            Categoria::create([
-                'nombre' => $validated['nombre'],
-                'descripcion' => $validated['descripcion'] ?? null,
-                'color' => $validated['color'] ?? '#3B82F6',
-                'activo' => true,
+            DB::insert("
+                INSERT INTO categorias (nombre, descripcion, color, activo, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ", [
+                $validated['nombre'],
+                $validated['descripcion'] ?? null,
+                $validated['color'] ?? '#3B82F6',
+                1,
+                now(),
+                now()
             ]);
 
             return response()->json([
@@ -53,7 +58,7 @@ class CategoriaController extends Controller
      */
     public function index()
     {
-        $categorias = Categoria::where('activo', true)->orderBy('nombre')->get();
+        $categorias = DB::select("SELECT * FROM categorias WHERE activo = 1 ORDER BY nombre");
         
         return response()->json($categorias);
     }
@@ -69,11 +74,16 @@ class CategoriaController extends Controller
             'color' => 'nullable|string|max:50',
         ]);
 
-        DB::table('categorias')->where('id', $categoria->id)->update([
-            'nombre' => $request->nombre,
-            'descripcion' => $request->descripcion,
-            'color' => $request->color ?? $categoria->color,
-            'updated_at' => now(),
+        DB::update("
+            UPDATE categorias SET 
+                nombre = ?, descripcion = ?, color = ?, updated_at = ?
+            WHERE id = ?
+        ", [
+            $request->nombre,
+            $request->descripcion,
+            $request->color ?? $categoria->color,
+            now(),
+            $categoria->id
         ]);
 
         return response()->json([
@@ -88,9 +98,11 @@ class CategoriaController extends Controller
     public function destroy(Categoria $categoria)
     {
         // Verificar si hay ejercicios asociados
-        $ejerciciosCount = DB::table('ejercicios')
-            ->where('categoria_id', $categoria->id)
-            ->count();
+        $ejerciciosCount = DB::selectOne("
+            SELECT COUNT(*) as total 
+            FROM ejercicios 
+            WHERE categoria_id = ?
+        ", [$categoria->id])->total ?? 0;
         
         if ($ejerciciosCount > 0) {
             return response()->json([
@@ -99,7 +111,7 @@ class CategoriaController extends Controller
             ], 400);
         }
         
-        $categoria->delete();
+        DB::delete("DELETE FROM categorias WHERE id = ?", [$categoria->id]);
 
         return response()->json([
             'success' => true,
@@ -107,4 +119,3 @@ class CategoriaController extends Controller
         ]);
     }
 }
-

@@ -22,14 +22,28 @@ class CheckRole
 
         $user = Auth::user();
         
-        // Expandir roles si vienen separados por comas (ej: "Administrador,Coach")
+        // Cargar el rol del usuario si no está cargado
+        if (!$user->relationLoaded('rol')) {
+            $user->load('rol');
+        }
+        
+        if (!$user->rol) {
+            abort(403, 'No tienes permisos para acceder a esta sección.');
+        }
+        
+        // Expandir roles si vienen separados por comas (ej: "Administrador,Entrenador")
         $allowedRoles = [];
         foreach ($roles as $role) {
             $allowedRoles = array_merge($allowedRoles, explode(',', $role));
         }
         $allowedRoles = array_map('trim', $allowedRoles);
         
-        if (!in_array($user->rol, $allowedRoles)) {
+        // Mapear "Coach" a "Entrenador" para compatibilidad
+        $allowedRoles = array_map(function($role) {
+            return $role === 'Coach' ? 'Entrenador' : $role;
+        }, $allowedRoles);
+        
+        if (!in_array($user->rol->nombre, $allowedRoles)) {
             abort(403, 'No tienes permisos para acceder a esta sección.');
         }
 

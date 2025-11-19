@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 
@@ -41,16 +42,62 @@ class RegisterController extends Controller
             'password_confirmation.required' => 'Por favor confirma tu contraseña.',
         ]);
 
-        $user = User::create([
-            'name' => $request->name . ' ' . $request->last_name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'rol' => 'Deportista', // Rol por defecto
-        ]);
+        // Obtener el ID del rol "Deportista"
+        $rolDeportista = DB::selectOne("SELECT * FROM roles WHERE nombre = 'Deportista' LIMIT 1");
+        
+        if (!$rolDeportista) {
+            return back()->withErrors([
+                'email' => 'Error al registrar el usuario. Por favor contacta al administrador.',
+            ])->withInput();
+        }
 
-        Auth::login($user);
+        // Crear el usuario usando SQL directo
+        DB::beginTransaction();
+        try {
+            DB::insert("
+                INSERT INTO users (name, email, password, rol_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ", [
+                $request->name . ' ' . $request->last_name,
+                $request->email,
+                Hash::make($request->password),
+                $rolDeportista->id,
+                now(),
+                now()
+            ]);
 
-        return redirect('/dashboard');
+            $userId = DB::getPdo()->lastInsertId();
+
+            // Crear registro en la tabla deportistas
+            DB::insert("
+                INSERT INTO deportistas (user_id, created_at, updated_at)
+                VALUES (?, ?, ?)
+            ", [
+                $userId,
+                now(),
+                now()
+            ]);
+
+            DB::commit();
+
+            // Cargar el usuario para autenticarlo
+            $user = User::find($userId);
+            
+            // Cargar la relación rol
+            if ($user) {
+                $user->load('rol');
+            }
+
+            Auth::login($user);
+
+            return redirect('/dashboard');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return back()->withErrors([
+                'email' => 'Error al registrar el usuario. Por favor intenta nuevamente.',
+            ])->withInput();
+        }
     }
 }
 

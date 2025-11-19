@@ -1,0 +1,14 @@
+-- Migración SQL: Crear tabla consejos_nutricion
+-- Descripción: Tabla para almacenar consejos de nutrición publicados por entrenadores
+
+CREATE TABLE IF NOT EXISTS consejos_nutricion (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL,
+    titulo VARCHAR(255) NOT NULL,
+    contenido TEXT NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT NULL,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
+    CONSTRAINT fk_consejos_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

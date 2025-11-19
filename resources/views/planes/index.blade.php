@@ -45,7 +45,7 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $plan->id }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ $plan->nombre }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${{ number_format($plan->precio, 0, ',', '.') }} COP</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $plan->duracion_dias }} días</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $plan->duracion ?? 'N/A' }}</td>
                         <td class="px-6 py-4 text-sm text-gray-500">{{ $plan->descripcion }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             @if($plan->activo)
