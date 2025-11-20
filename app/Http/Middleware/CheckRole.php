@@ -22,12 +22,10 @@ class CheckRole
 
         $user = Auth::user();
         
-        // Cargar el rol del usuario si no está cargado
-        if (!$user->relationLoaded('rol')) {
-            $user->load('rol');
-        }
+        // Cargar el rol del usuario - el accessor getRolAttribute() se encarga de cargarlo automáticamente
+        $rol = $user->rol;
         
-        if (!$user->rol) {
+        if (!$rol) {
             abort(403, 'No tienes permisos para acceder a esta sección.');
         }
         
@@ -43,7 +41,7 @@ class CheckRole
             return $role === 'Coach' ? 'Entrenador' : $role;
         }, $allowedRoles);
         
-        if (!in_array($user->rol->nombre, $allowedRoles)) {
+        if (!in_array($rol->nombre, $allowedRoles)) {
             abort(403, 'No tienes permisos para acceder a esta sección.');
         }
 

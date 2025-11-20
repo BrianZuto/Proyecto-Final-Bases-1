@@ -19,7 +19,7 @@ class ClienteController extends Controller
         // Construir query base con SQL directo
         $whereConditions = [];
         $params = [];
-        
+
         // Filtro por nombre
         if ($request->filled('nombre')) {
             $nombre = '%' . $request->nombre . '%';
@@ -29,7 +29,7 @@ class ClienteController extends Controller
             $params[] = $nombre;
             $params[] = $nombre;
         }
-        
+
         // Filtro por rol
         if ($request->filled('rol')) {
             $rolNombre = $request->rol;
@@ -39,38 +39,38 @@ class ClienteController extends Controller
             $whereConditions[] = "r.nombre = ?";
             $params[] = $rolNombre;
         }
-        
+
         // Filtro por plan
         if ($request->filled('plan_id')) {
             $planId = $request->plan_id;
             $whereConditions[] = "EXISTS (
-                SELECT 1 FROM plan_usuario pu 
-                WHERE pu.user_id = u.id 
-                AND pu.plan_id = ? 
-                AND pu.activo = 1 
+                SELECT 1 FROM plan_usuario pu
+                WHERE pu.user_id = u.id
+                AND pu.plan_id = ?
+                AND pu.activo = 1
                 AND pu.fecha_fin >= ?
             )";
             $params[] = $planId;
             $params[] = now()->toDateString();
         }
-        
+
         $whereClause = !empty($whereConditions) ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
-        
+
         // Obtener total para paginación
         $total = DB::selectOne("
-            SELECT COUNT(*) as total 
+            SELECT COUNT(*) as total
             FROM users u
             LEFT JOIN roles r ON u.rol_id = r.id
             {$whereClause}
         ", $params)->total ?? 0;
-        
+
         $perPage = 15;
         $currentPage = $request->get('page', 1);
         $offset = ($currentPage - 1) * $perPage;
-        
+
         // Obtener datos paginados
         $usuariosData = DB::select("
-            SELECT 
+            SELECT
                 u.*,
                 r.nombre as rol_nombre,
                 r.id as rol_id
@@ -80,11 +80,11 @@ class ClienteController extends Controller
             ORDER BY u.created_at DESC
             LIMIT ? OFFSET ?
         ", array_merge($params, [$perPage, $offset]));
-        
+
         // Transformar datos para incluir planes activos
         $usuarios = collect($usuariosData)->map(function($usuario) {
             $planActivo = DB::selectOne("
-                SELECT 
+                SELECT
                     p.*,
                     pu.fecha_inicio,
                     pu.fecha_fin,
@@ -95,7 +95,7 @@ class ClienteController extends Controller
                 AND pu.activo = 1
                 AND pu.fecha_fin >= ?
             ", [$usuario->id, now()->toDateString()]);
-            
+
             if ($planActivo) {
                 $planActivo->pivot = (object) [
                     'fecha_inicio' => $planActivo->fecha_inicio,
@@ -103,9 +103,9 @@ class ClienteController extends Controller
                     'activo' => $planActivo->pivot_activo,
                 ];
             }
-            
+
             $usuario->plan_activo = $planActivo;
-            
+
             // Crear objeto rol simulado para compatibilidad
             if ($usuario->rol_nombre) {
                 $usuario->rol = (object) [
@@ -113,10 +113,10 @@ class ClienteController extends Controller
                     'nombre' => $usuario->rol_nombre,
                 ];
             }
-            
+
             return $usuario;
         });
-        
+
         // Crear paginador manual
         $clientes = new \Illuminate\Pagination\LengthAwarePaginator(
             $usuarios,
@@ -128,10 +128,10 @@ class ClienteController extends Controller
                 'query' => $request->query(),
             ]
         );
-        
+
         // Obtener planes
         $planes = DB::select("SELECT * FROM planes ORDER BY nombre");
-        
+
         return view('clientes.index', compact('clientes', 'planes'));
     }
 
@@ -164,15 +164,15 @@ class ClienteController extends Controller
         // Obtener el ID del rol
         $rolNombre = $request->rol === 'Coach' ? 'Entrenador' : $request->rol;
         $rol = DB::selectOne("SELECT * FROM roles WHERE nombre = ?", [$rolNombre]);
-        
+
         if (!$rol) {
             return back()->withErrors(['rol' => 'El rol seleccionado no es válido.'])->withInput();
         }
 
         $nombreCompleto = trim(
-            $request->primer_nombre . ' ' . 
-            ($request->segundo_nombre ?? '') . ' ' . 
-            $request->primer_apellido . ' ' . 
+            $request->primer_nombre . ' ' .
+            ($request->segundo_nombre ?? '') . ' ' .
+            $request->primer_apellido . ' ' .
             ($request->segundo_apellido ?? '')
         );
 
@@ -238,11 +238,11 @@ class ClienteController extends Controller
         if (!$cliente->relationLoaded('rol')) {
             $cliente->load('rol');
         }
-        
+
         // Obtener planes usando SQL directo
         $planes = DB::select("SELECT * FROM planes ORDER BY nombre");
         $planActivo = $cliente->planActivo();
-        
+
         return view('clientes.edit', compact('cliente', 'planes', 'planActivo'));
     }
 
@@ -267,7 +267,7 @@ class ClienteController extends Controller
         // Obtener el ID del rol
         $rolNombre = $request->rol === 'Coach' ? 'Entrenador' : $request->rol;
         $rol = DB::selectOne("SELECT * FROM roles WHERE nombre = ?", [$rolNombre]);
-        
+
         if (!$rol) {
             return back()->withErrors(['rol' => 'El rol seleccionado no es válido.'])->withInput();
         }
@@ -279,13 +279,13 @@ class ClienteController extends Controller
             INNER JOIN roles r ON u.rol_id = r.id
             WHERE u.id = ?
         ", [$cliente->id]);
-        
+
         $rolCambio = !$rolActual || $rolActual->rol_nombre !== $rolNombre;
 
         $nombreCompleto = trim(
-            $request->primer_nombre . ' ' . 
-            ($request->segundo_nombre ?? '') . ' ' . 
-            $request->primer_apellido . ' ' . 
+            $request->primer_nombre . ' ' .
+            ($request->segundo_nombre ?? '') . ' ' .
+            $request->primer_apellido . ' ' .
             ($request->segundo_apellido ?? '')
         );
 
@@ -294,7 +294,7 @@ class ClienteController extends Controller
             // Actualizar usuario
             if ($request->filled('password')) {
                 DB::update("
-                    UPDATE users SET 
+                    UPDATE users SET
                         name = ?, primer_nombre = ?, segundo_nombre = ?, primer_apellido = ?,
                         segundo_apellido = ?, nombre_usuario = ?, email = ?, telefonos = ?,
                         direccion = ?, rol_id = ?, password = ?, updated_at = ?
@@ -316,7 +316,7 @@ class ClienteController extends Controller
                 ]);
             } else {
                 DB::update("
-                    UPDATE users SET 
+                    UPDATE users SET
                         name = ?, primer_nombre = ?, segundo_nombre = ?, primer_apellido = ?,
                         segundo_apellido = ?, nombre_usuario = ?, email = ?, telefonos = ?,
                         direccion = ?, rol_id = ?, updated_at = ?
@@ -336,14 +336,14 @@ class ClienteController extends Controller
                     $cliente->id
                 ]);
             }
-            
+
             // Si cambió el rol, actualizar tablas de herencia
             if ($rolCambio) {
                 // Eliminar de todas las tablas de herencia
                 DB::delete("DELETE FROM deportistas WHERE user_id = ?", [$cliente->id]);
                 DB::delete("DELETE FROM entrenadores WHERE user_id = ?", [$cliente->id]);
                 DB::delete("DELETE FROM administradores WHERE user_id = ?", [$cliente->id]);
-                
+
                 // Crear en la tabla correspondiente al nuevo rol
                 if ($rolNombre === 'Deportista') {
                     DB::insert("INSERT INTO deportistas (user_id, created_at, updated_at) VALUES (?, ?, ?)", [$cliente->id, now(), now()]);
@@ -352,7 +352,7 @@ class ClienteController extends Controller
                 } elseif ($rolNombre === 'Administrador') {
                     DB::insert("INSERT INTO administradores (user_id, created_at, updated_at) VALUES (?, ?, ?)", [$cliente->id, now(), now()]);
                 }
-                
+
                 // Si cambió de Deportista a otro rol, desactivar planes
                 if ($rolActual && $rolActual->rol_nombre === 'Deportista' && $rolNombre !== 'Deportista') {
                     DB::update("UPDATE plan_usuario SET activo = 0 WHERE user_id = ? AND activo = 1", [$cliente->id]);
@@ -362,16 +362,27 @@ class ClienteController extends Controller
             // Asignar plan solo si el usuario es Deportista
             if ($request->filled('plan_id') && $rolNombre === 'Deportista') {
                 $plan = DB::selectOne("SELECT * FROM planes WHERE id = ?", [$request->plan_id]);
-                
+
                 if ($plan) {
                     // Desactivar planes anteriores del usuario
                     DB::update("UPDATE plan_usuario SET activo = 0 WHERE user_id = ? AND activo = 1", [$cliente->id]);
-                    
+
                     // Calcular fechas
                     $fechaInicio = now()->toDateString();
-                    $duracionDias = is_numeric($plan->duracion_dias) ? $plan->duracion_dias : 30;
+                    // Extraer número de días del campo duracion (formato: "30 días" o similar)
+                    $duracionDias = 30; // Valor por defecto
+                    if (isset($plan->duracion)) {
+                        // Extraer solo los números del campo duracion
+                        preg_match('/\d+/', $plan->duracion, $matches);
+                        if (!empty($matches)) {
+                            $duracionDias = (int)$matches[0];
+                        }
+                    } elseif (isset($plan->duracion_dias)) {
+                        // Fallback por si existe duracion_dias
+                        $duracionDias = is_numeric($plan->duracion_dias) ? (int)$plan->duracion_dias : 30;
+                    }
                     $fechaFin = now()->addDays($duracionDias)->toDateString();
-                    
+
                     // Crear nueva asignación de plan
                     DB::insert("
                         INSERT INTO plan_usuario (user_id, plan_id, fecha_inicio, fecha_fin, activo, created_at, updated_at)
@@ -397,15 +408,15 @@ class ClienteController extends Controller
         // No permitir eliminarse a sí mismo
         $clienteId = $cliente->id;
         $authUserId = Auth::id();
-        
+
         if ($clienteId === $authUserId) {
             return redirect()->route('clientes.index')->with('error', 'No puedes eliminar tu propia cuenta.');
         }
 
         // Verificar si el cliente tiene planes activos antes de eliminar
         $tienePlanActivo = DB::selectOne("
-            SELECT COUNT(*) as total 
-            FROM plan_usuario 
+            SELECT COUNT(*) as total
+            FROM plan_usuario
             WHERE user_id = ? AND activo = 1 AND fecha_fin >= ?
         ", [$clienteId, now()->toDateString()])->total ?? 0;
 
@@ -416,7 +427,7 @@ class ClienteController extends Controller
         // Eliminar relaciones primero
         DB::delete("DELETE FROM plan_usuario WHERE user_id = ?", [$clienteId]);
         DB::delete("DELETE FROM rutina_usuario_progreso WHERE user_id = ?", [$clienteId]);
-        
+
         // Eliminar cliente
         DB::delete("DELETE FROM users WHERE id = ?", [$clienteId]);
 
@@ -429,14 +440,21 @@ class ClienteController extends Controller
     public function assignPlan(Request $request, $userId)
     {
         // Solo administradores pueden asignar planes
-        if (!Auth::user()->isAdministrador()) {
+        $user = Auth::user();
+        $rol = $user->rol;
+        if (!$rol || $rol->nombre !== 'Administrador') {
             return back()->withErrors(['error' => 'No tienes permisos para realizar esta acción.']);
+        }
+
+        // Si plan_id está vacío, no hacer nada (solo se seleccionó la opción placeholder)
+        if (empty($request->plan_id) || $request->plan_id === '') {
+            return back();
         }
 
         // Si plan_id es 0, quitar el plan
         if ($request->plan_id == '0') {
             DB::update("UPDATE plan_usuario SET activo = 0 WHERE user_id = ? AND activo = 1", [$userId]);
-            
+
             return redirect()->route('clientes.index')->with('success', 'Plan removido exitosamente.');
         }
 
@@ -473,7 +491,18 @@ class ClienteController extends Controller
 
             // Calcular fechas
             $fechaInicio = now()->toDateString();
-            $duracionDias = is_numeric($plan->duracion_dias) ? $plan->duracion_dias : 30;
+            // Extraer número de días del campo duracion (formato: "30 días" o similar)
+            $duracionDias = 30; // Valor por defecto
+            if (isset($plan->duracion)) {
+                // Extraer solo los números del campo duracion
+                preg_match('/\d+/', $plan->duracion, $matches);
+                if (!empty($matches)) {
+                    $duracionDias = (int)$matches[0];
+                }
+            } elseif (isset($plan->duracion_dias)) {
+                // Fallback por si existe duracion_dias
+                $duracionDias = is_numeric($plan->duracion_dias) ? (int)$plan->duracion_dias : 30;
+            }
             $fechaFin = now()->addDays($duracionDias)->toDateString();
 
             // Crear nueva asignación de plan

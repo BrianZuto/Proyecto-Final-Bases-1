@@ -29,11 +29,13 @@ class LoginController extends Controller
 
         if (Auth::attempt($request->only('email', 'password'), $request->boolean('remember'))) {
             $request->session()->regenerate();
-            
+
             // Cargar la relación rol para evitar errores
+            // El accessor getRolAttribute() se encarga de cargar el rol automáticamente
             $user = Auth::user();
-            if ($user && !$user->relationLoaded('rol')) {
-                $user->load('rol');
+            if ($user) {
+                // Acceder al rol para activar el accessor y cargar la relación
+                $user->rol;
             }
 
             return redirect()->intended('/dashboard');
